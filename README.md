@@ -8,6 +8,7 @@ pour in → all down → "Reinforcements!" → wave two → the end.*
 Scenarios are saved as JSON into the game folder, where a server with the
 Clone Army OpenJK engine picks them up. In game, log in and type `!ht` to list
 the scenarios for the map that's on, then `!ht <n> play` (admins) to run one.
+Saved a change while it's running? `!ht restart` reloads it from the file and starts it over.
 
 ## What's in it
 

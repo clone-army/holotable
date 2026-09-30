@@ -749,7 +749,7 @@ function renderScenario(el) {
     s.anytimeSpawn ? field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 })) : null,
     h('div', { class: 'info' },
       h('b', {}, 'Playing it: '), 'on a social server running ', h('code', {}, s.map), ', log in and type ', h('code', {}, '!ht'),
-      ' to list its scenarios, then ', h('code', {}, '!ht <n> play'), ' (admins). ', h('code', {}, '!ht stop'), ' ends it.'),
+      ' to list its scenarios, then ', h('code', {}, '!ht <n> play'), ' (admins). ', h('code', {}, '!ht restart'), ' reloads it after you save a change here; ', h('code', {}, '!ht stop'), ' ends it.'),
     h('div', { class: 'stats' },
       stat(s.points.length, 'points'), stat(s.routes.length, 'routes'), stat(s.areas.length, 'areas'),
       stat(s.npcTypes.length, 'NPC types'), stat(s.groups.length, 'groups'), stat(s.triggers.length, 'triggers')),
