@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Users - Holotable{% endblock %}
+{% block content %}
+<main class="page">
+  <div class="page-head"><div><h1>Users</h1><p class="muted">Editors build scenarios (any scenario, for now). Admins also manage accounts.</p></div></div>
+  <section class="card">
+    <h2>Add a user</h2>
+    <form id="add-form" class="row-form">
+      <label>Username<input id="add-name" minlength="3" maxlength="32" required></label>
+      <label>Password<input id="add-pass" type="password" minlength="8" required></label>
+      <label>Role<select id="add-role"><option value="editor">Editor</option><option value="admin">Admin</option></select></label>
+      <button class="btn primary" type="submit">Add</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Accounts <span class="badge">{{ users|length }}</span></h2>
+    <table class="table">
+      <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>
+            <select data-role="{{ u.username }}">
+              <option value="editor" {% if u.role == 'editor' %}selected{% endif %}>Editor</option>
+              <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+            </select>
+          </td>
+          <td class="actions">
+            <button class="btn small" data-pass="{{ u.username }}">Set password</button>
+            {% if u.username|lower != user.username|lower %}<button class="btn small danger" data-del="{{ u.username }}">Delete</button>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('add-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/users/add', { username: document.getElementById('add-name').value, password: document.getElementById('add-pass').value, role: document.getElementById('add-role').value });
+    location.reload();
+  } catch (err) { toast(err.message, true); }
+});
+document.querySelectorAll('[data-role]').forEach(s => s.addEventListener('change', async () => {
+  try { const r = await api('/api/users/role', { username: s.dataset.role, role: s.value }); toast(r.message); }
+  catch (err) { toast(err.message, true); location.reload(); }
+}));
+document.querySelectorAll('[data-pass]').forEach(b => b.addEventListener('click', async () => {
+  const p = prompt('New password for ' + b.dataset.pass + ' (8+ characters):');
+  if (!p) return;
+  try { const r = await api('/api/users/password', { username: b.dataset.pass, password: p }); toast(r.message); }
+  catch (err) { toast(err.message, true); }
+}));
+document.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+  if (!confirm('Delete ' + b.dataset.del + '?')) return;
+  try { await api('/api/users/delete', { username: b.dataset.del }); location.reload(); }
+  catch (err) { toast(err.message, true); }
+}));
+</script>
+{% endblock %}

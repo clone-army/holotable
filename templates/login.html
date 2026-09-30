@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Log in - Holotable{% endblock %}
+{% block bodyclass %}login-page{% endblock %}
+{% block content %}
+<main class="login-card">
+  <div class="login-mark"></div>
+  <h1>Holotable</h1>
+  <p class="muted">Scenario builder for MBII servers</p>
+  {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label>Username<input name="username" autocomplete="username" required autofocus></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary wide" type="submit">Log in</button>
+  </form>
+</main>
+{% endblock %}

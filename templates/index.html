@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page">
+  <div class="page-head">
+    <div>
+      <h1>Scenarios</h1>
+      <p class="muted">Saved into the game folder, where servers find them. In game, log in and type <code>!ht</code> on a map to list its scenarios, then <code>!ht &lt;n&gt; play</code> (admins).</p>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>New scenario</h2>
+    <form id="new-form" class="row-form">
+      <label>Name<input id="new-name" maxlength="60" placeholder="Hangar ambush" required></label>
+      <label>Map
+        <input id="new-map" list="map-list" placeholder="{{ maps|length }} maps - start typing" required>
+        <datalist id="map-list">{% for m in maps %}<option value="{{ m }}">{% endfor %}</datalist>
+      </label>
+      <button class="btn primary" type="submit">Create</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>All scenarios <span class="badge">{{ scenarios|length }}</span></h2>
+      <input id="search" type="search" placeholder="Search name or map">
+    </div>
+    {% if scenarios %}
+    <table class="table">
+      <thead><tr><th>Name</th><th>Map</th><th>Groups</th><th>Triggers</th><th>Last edited</th><th></th></tr></thead>
+      <tbody id="rows">
+        {% for s in scenarios|sort(attribute='updated', reverse=True) %}
+        <tr data-search="{{ (s.name ~ ' ' ~ s.map)|lower }}">
+          <td><a href="/edit/{{ s.id }}">{{ s.name }}</a>{% if s.description %}<div class="muted small">{{ s.description }}</div>{% endif %}</td>
+          <td><code>{{ s.map }}</code></td>
+          <td>{{ s.groups }}</td>
+          <td>{{ s.triggers }}</td>
+          <td class="small muted" data-time="{{ s.updated }}">{{ s.updatedBy }}</td>
+          <td class="actions">
+            <a class="btn small" href="/edit/{{ s.id }}">Edit</a>
+            <button class="btn small" data-dup="{{ s.id }}">Copy</button>
+            <button class="btn small danger" data-del="{{ s.id }}" data-name="{{ s.name }}">Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">None yet - make one above.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('new-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api('/api/scenarios', { name: document.getElementById('new-name').value, map: document.getElementById('new-map').value });
+    location.href = '/edit/' + r.id;
+  } catch (err) { toast(err.message, true); }
+});
+document.querySelectorAll('[data-dup]').forEach(b => b.addEventListener('click', async () => {
+  try { const r = await api('/api/scenarios/' + b.dataset.dup + '/duplicate', {}); location.href = '/edit/' + r.id; }
+  catch (err) { toast(err.message, true); }
+}));
+document.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+  if (!confirm('Delete "' + b.dataset.name + '"? Servers will stop seeing it.')) return;
+  try { await api('/api/scenarios/' + b.dataset.del + '/delete', {}); location.reload(); }
+  catch (err) { toast(err.message, true); }
+}));
+document.querySelectorAll('[data-time]').forEach(td => {
+  const t = +td.dataset.time;
+  if (t) td.textContent = new Date(t * 1000).toLocaleString() + (td.textContent.trim() ? ' - ' + td.textContent.trim() : '');
+});
+const search = document.getElementById('search');
+if (search) search.addEventListener('input', () => {
+  const q = search.value.trim().toLowerCase();
+  document.querySelectorAll('#rows tr').forEach(r => r.style.display = !q || r.dataset.search.includes(q) ? '' : 'none');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Holotable{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='24' rx='13' ry='5' fill='none' stroke='%2346c8ff' stroke-width='2'/%3E%3Cpath d='M9 22 16 6 23 22' fill='none' stroke='%2346c8ff' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
+</head>
+<body class="{% block bodyclass %}{% endblock %}">
+  {% if user %}
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark"></span>Holotable</a>
+    {% block topbar %}{% endblock %}
+    <nav class="topnav">
+      <a href="/">Scenarios</a>
+      {% if user.role == 'admin' %}<a href="/users">Users</a>{% endif %}
+      <button class="linkish" type="button" onclick="changeOwnPassword()">{{ user.username }}</button>
+      <form method="post" action="/logout"><button class="linkish" type="submit">Log out</button></form>
+    </nav>
+  </header>
+  {% endif %}
+  {% block content %}{% endblock %}
+  <div id="toast" class="toast" hidden></div>
+  <script src="{{ url_for('static', filename='common.js') }}?v={{ version }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
