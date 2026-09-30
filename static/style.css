@@ -218,3 +218,26 @@ table.mini tr.on td { color: var(--holo); }
   .hud { right: 12px; bottom: auto; top: 12px; left: 12px; max-width: calc(100% - 216px); }
   .editor-title .map-chip, #save-state { display: none; }
 }
+
+/* Searchable dropdown */
+.combo { position: relative; flex: 1; min-width: 0; }
+.chips .combo { min-width: 160px; }
+.chips .combo input { border: 0; background: none; padding: 3px 4px; box-shadow: none !important; }
+.combo-list {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 30; max-height: 320px; overflow-y: auto;
+  width: max(100%, 320px);
+  background: #0b1726; border: 1px solid var(--holo-dim); border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.combo-list[hidden] { display: none; }
+.combo-item { display: flex; align-items: center; gap: 10px; padding: 5px 8px; cursor: pointer; }
+.combo-item.on, .combo-item:hover { background: rgba(70, 200, 255, 0.12); }
+.combo-item img, .combo-noicon { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--bg2); }
+.combo-text { display: flex; flex-direction: column; min-width: 0; }
+.combo-text b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-text small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
+
+.icon-btn { padding: 6px 10px; }
+.icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn:disabled:hover { background: #12263b; border-color: var(--line); }

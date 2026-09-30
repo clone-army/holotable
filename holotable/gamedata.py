@@ -24,8 +24,11 @@ _index = {"sig": None, "maps": {}, "npcs": None}
 # Surfaces never drawn (sky, tool textures, effects).
 _SKIP_SHADERS = ("sky", "nodraw", "clip", "caulk", "trigger", "hint", "skip", "fog", "water",
                  "volumetric", "flare", "shadow", "areaportal", "origin", "system/")
-_CONTENTS_SOLID = 1
-_GEOMETRY_VERSION = 5
+# Liquids and fog (CONTENTS_LAVA, _SLIME, _WATER, _FOG) aren't floors. Other
+# non-solid surfaces are kept: a floor you see is often a non-solid shader
+# (shiny, translucent, decal) over a collision brush that isn't drawn.
+_CONTENTS_LIQUID = 0x2 | 0x4 | 0x8 | 0x10
+_GEOMETRY_VERSION = 7
 
 
 def _pk3s():
@@ -143,10 +146,13 @@ def _extract(data):
     for i in range(sl // 72):
         name = data[so + i * 72: so + i * 72 + 64].split(b"\0")[0].decode("latin1").lower()
         _sflags, cflags = struct.unpack_from("<ii", data, so + i * 72 + 64)
-        shaders.append(not any(s in name for s in _SKIP_SHADERS) and bool(cflags & _CONTENTS_SOLID))
+        shaders.append(not any(s in name for s in _SKIP_SHADERS) and not (cflags & _CONTENTS_LIQUID))
 
     vo, vl = lump(10)
-    verts = [v[:3] for v in struct.iter_unpack("<3f68x", data[vo: vo + (vl // 80) * 80])]
+    # x, y, z and the surface normal's z: which way a surface faces comes
+    # from the normals stored with it - Q3 maps wind triangles clockwise, so
+    # working it out from the corner order gets it upside down.
+    verts = [(v[0], v[1], v[2], v[5]) for v in struct.iter_unpack("<3f8x32x3f16x", data[vo: vo + (vl // 80) * 80])]
     io, il = lump(11)
     idx = struct.unpack_from("<%di" % (il // 4), data, io)
     fo, fl = lump(13)
@@ -154,9 +160,10 @@ def _extract(data):
     floors, walls, floor_areas = [], set(), []
 
     def add(a, b, c):
-        nz, area = _normal_z(a, b, c)
+        _nz, area = _normal_z(a, b, c)
         if area < 1.0:
             return
+        nz = (a[3] + b[3] + c[3]) / 3.0
         if nz > 0.6:
             floors.append((a, b, c))
             floor_areas.append(((a[2] + b[2] + c[2]) / 3.0, area))

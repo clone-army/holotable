@@ -295,8 +295,13 @@ function find(kind, id) {
 function placeZ(obj, x, y) {
   const z = pickZ(x, y);
   obj.x = round1(x); obj.y = round1(y);
-  if (z !== null) obj.z = z;
-  else if (obj.z === undefined) { obj.z = Math.round(S.cut - 100); toast('No floor under that spot (below the cut) - set its height by hand.', true); }
+  if (z !== null) { obj.z = z; return; }
+  const above = surfacesAt(x, y).filter((q) => q > S.cut + 8);
+  if (above.length) obj.z = Math.round(above[above.length - 1]);
+  else if (obj.z === undefined) obj.z = Math.round(S.cut - 100);
+  toast(above.length
+    ? 'The floor there is above the cut height (at ' + Math.round(above[above.length - 1]) + ') - used that. Raise the cut to see that floor.'
+    : 'No floor found under that spot - set its height by hand (Places tab).', !above.length);
 }
 
 function nextName(list, base) {
@@ -463,6 +468,8 @@ function updateHud() {
     const below = all.filter((z) => z <= S.cut + 8);
     where = 'x ' + Math.round(h.wx) + '  y ' + Math.round(h.wy) + '  floor ' + (below.length ? Math.round(below[0]) : '-');
     if (below.length > 1) where += '  (also ' + below.slice(1, 4).map(Math.round).join(', ') + ')';
+    const above = all.filter((z) => z > S.cut + 8);
+    if (above.length) where += '  | above the cut: ' + above.slice(-3).reverse().map(Math.round).join(', ');
   }
   $('#hud').innerHTML = '<div>' + esc(where) + '</div><div class="muted">' + esc(HINTS[S.tool] || '') + '</div>';
 }
@@ -612,10 +619,78 @@ function selectIn(obj, key, options, after) {
   return sel;
 }
 
+// --- Undo / redo ---------------------------------------------------------------
+//
+// The scenario as it was after each change, as JSON. An edit's changed()
+// or soft() call comes after it's made, so the last snapshot is what it was
+// before. Typing (soft) is gathered up into one step once it pauses.
+const HIST = { undo: [], redo: [], last: null, timer: null, max: 150 };
+
+function commitHistory() {
+  clearTimeout(HIST.timer);
+  HIST.timer = null;
+  const now = JSON.stringify(S.scn);
+  if (HIST.last !== null && now !== HIST.last) {
+    HIST.undo.push(HIST.last);
+    if (HIST.undo.length > HIST.max) HIST.undo.shift();
+    HIST.redo = [];
+  }
+  HIST.last = now;
+  updateUndoButtons();
+}
+
+function resetHistoryBase() { HIST.last = JSON.stringify(S.scn); updateUndoButtons(); }
+
+function updateUndoButtons() {
+  const u = $('#undo-btn'), r = $('#redo-btn');
+  if (u) { u.disabled = !HIST.undo.length && !HIST.timer; u.title = 'Undo (Ctrl+Z)' + (HIST.undo.length ? ' - ' + HIST.undo.length + ' step' + (HIST.undo.length > 1 ? 's' : '') : ''); }
+  if (r) r.disabled = !HIST.redo.length;
+}
+
+function restore(json) {
+  S.scn = normalise(JSON.parse(json));
+  HIST.last = json;
+  S.drafting = null;
+  S.drag = null;
+  if (S.sel) {
+    const o = find(S.sel.kind, S.sel.id);
+    if (!o) S.sel = null;
+    else if (S.sel.vi !== undefined && S.sel.vi >= o.points.length) delete S.sel.vi;
+  }
+  $('#scn-name').value = S.scn.name;
+  markDirty();
+  checkRoutes();
+  validate();
+  renderPanels();
+  draw();
+  updateUndoButtons();
+}
+
+function undo() {
+  if (HIST.timer) commitHistory(); // typing still being gathered: that's the step to undo
+  if (!HIST.undo.length) return;
+  HIST.redo.push(HIST.last);
+  restore(HIST.undo.pop());
+}
+
+function redo() {
+  if (HIST.timer) commitHistory();
+  if (!HIST.redo.length) return;
+  HIST.undo.push(HIST.last);
+  restore(HIST.redo.pop());
+}
+
 // A small edit that doesn't redraw the panels (so typing keeps focus).
-function soft() { markDirty(); validate(); }
+function soft() {
+  markDirty();
+  validate();
+  clearTimeout(HIST.timer);
+  HIST.timer = setTimeout(commitHistory, 700);
+  updateUndoButtons();
+}
 
 function changed() {
+  commitHistory();
   markDirty();
   checkRoutes();
   validate();
@@ -712,6 +787,98 @@ function renderPlaces(el) {
   listFor('Areas', 'area', s.areas, (a) => ' radius ' + Math.round(a.radius));
 }
 
+// A searchable dropdown: type to filter, arrows and Enter (or a click) to
+// pick. items: [{ value, label, sub, icon }]. freeText: what's typed counts
+// as the value too (onType), for names the lists don't have.
+const COMBO_SHOWN = 80;
+function combo({ value = '', items, placeholder = '', onPick, onType, clearOnPick = false }) {
+  const wrap = h('div', { class: 'combo' });
+  const input = h('input', { value, placeholder, autocomplete: 'off', spellcheck: 'false' });
+  const list = h('div', { class: 'combo-list', hidden: true });
+  wrap.append(input, list);
+  let shown = [], active = -1;
+
+  const iconFor = (it) => {
+    if (!it.icon) return null;
+    const img = h('img', { src: it.icon, loading: 'lazy', alt: '' });
+    img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
+    return img;
+  };
+  const fill = (showAll) => {
+    const q = showAll ? '' : input.value.trim().toLowerCase();
+    const words = q.split(/\s+/).filter(Boolean);
+    const all = typeof items === 'function' ? items() : items;
+    const hits = words.length ? all.filter((it) => {
+      const hay = (it.value + ' ' + (it.label || '') + ' ' + (it.sub || '') + ' ' + (it.search || '')).toLowerCase();
+      return words.every((w) => hay.includes(w));
+    }) : all;
+    // Names starting with what's typed first.
+    if (q) hits.sort((a, b) => (b.value.toLowerCase().startsWith(q) - a.value.toLowerCase().startsWith(q)));
+    shown = hits.slice(0, COMBO_SHOWN);
+    active = shown.length ? 0 : -1;
+    list.innerHTML = '';
+    shown.forEach((it, i) => list.append(h('div', { class: 'combo-item' + (i === active ? ' on' : ''), 'data-i': i,
+      onmousedown: (e) => { e.preventDefault(); pick(i); } },
+      iconFor(it) || h('span', { class: 'combo-noicon' }),
+      h('span', { class: 'combo-text' }, h('b', {}, it.label || it.value), it.sub ? h('small', {}, it.sub) : null))));
+    if (!shown.length) list.append(h('div', { class: 'combo-empty' }, q ? 'Nothing matches "' + input.value.trim() + '"' : 'Nothing to pick'));
+    else if (hits.length > shown.length) list.append(h('div', { class: 'combo-empty' }, (hits.length - shown.length) + ' more - keep typing to narrow it down'));
+  };
+  const highlight = (i) => {
+    active = i;
+    list.querySelectorAll('.combo-item').forEach((el, j) => el.classList.toggle('on', j === i));
+    const el = list.querySelector('.combo-item.on');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  };
+  // Opened by clicking in: everything (the current value highlighted, if
+  // it's there), with the text selected so typing replaces it.
+  const open = (all) => {
+    fill(all);
+    list.hidden = false;
+    if (all && input.value) {
+      const i = shown.findIndex((it) => it.value.toLowerCase() === input.value.trim().toLowerCase());
+      if (i >= 0) highlight(i);
+    }
+  };
+  const close = () => { list.hidden = true; };
+  const pick = (i) => {
+    const it = shown[i];
+    if (!it) return;
+    const query = input.value.trim().toLowerCase();
+    input.value = clearOnPick ? '' : it.value;
+    close();
+    onPick(it.value, query);
+  };
+  input.addEventListener('focus', () => { open(true); input.select(); });
+  input.addEventListener('click', () => { if (list.hidden) open(true); });
+  input.addEventListener('input', () => { open(); if (onType) onType(input.value.trim()); });
+  input.addEventListener('blur', () => setTimeout(close, 120));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (list.hidden) open(true); else highlight(Math.min(shown.length - 1, active + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(Math.max(0, active - 1)); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!list.hidden && active >= 0) pick(active);
+      else if (clearOnPick && input.value.trim()) { const v = input.value.trim(); input.value = ''; close(); onPick(v); }
+    } else if (e.key === 'Escape') { close(); }
+  });
+  return wrap;
+}
+
+const iconUrl = (model, skin) => '/api/models/' + encodeURIComponent(model || 'x') + '/' + encodeURIComponent(skin || 'default') + '/icon';
+
+function modelItems() {
+  // Skins are searched too ("clone arc" finds clonetrooper_p2's arc skins).
+  return S.models.map((m) => ({ value: m.model, sub: m.skins.length + ' skin' + (m.skins.length === 1 ? '' : 's') + ': ' + m.skins.slice(0, 8).join(', '),
+    search: m.skins.join(' '), icon: iconUrl(m.model, 'default') }));
+}
+
+// Every NPC type a group can use: this scenario's own, then the server's.
+function npcItems() {
+  const own = S.scn.npcTypes.map((n) => ({ value: n.name, sub: 'this scenario - ' + (n.model || '?') + ' / ' + n.weapon.replace(/^WP_/, '').toLowerCase(), icon: iconUrl(n.model, n.skin) }));
+  return own.concat(S.npcs.map((n) => ({ value: n.name, sub: n.model || '', icon: n.model ? iconUrl(n.model, 'default') : null })));
+}
+
 function modelSkins(model) {
   const m = S.models.find((x) => x.model.toLowerCase() === String(model || '').toLowerCase());
   return m ? m.skins : [];
@@ -735,7 +902,16 @@ function renderNpcs(el) {
       if (skins.length && !skins.includes(n.skin)) { n.skin = skins.includes('default') ? 'default' : skins[0]; skinSel.value = n.skin; }
       updIcon();
     };
-    const modelIn = h('input', { value: n.model, list: 'model-list', placeholder: 'e.g. clonetrooper_p2', oninput: (e) => { n.model = e.target.value.trim(); soft(); }, onchange: fillSkins });
+    const modelIn = combo({ value: n.model, items: modelItems, placeholder: 'Search ' + S.models.length + ' models',
+      onPick: (v, query) => {
+        n.model = v;
+        // Found by a skin's name: that skin.
+        const words = (query || '').split(/\s+/).filter((w) => w && !v.toLowerCase().includes(w));
+        const skin = words.length && modelSkins(v).find((k) => words.every((w) => k.toLowerCase().includes(w)));
+        if (skin) n.skin = skin;
+        soft();
+        fillSkins();
+      }, onType: (v) => { n.model = v; soft(); } });
     const nameIn = h('input', { value: n.name, maxlength: 43, oninput: (e) => {
       const old = n.name;
       let v = e.target.value.replace(/[^A-Za-z0-9_]/g, '');
@@ -766,10 +942,10 @@ function npcChips(g) {
   const wrap = h('div', { class: 'chips' });
   g.npcs.forEach((n, i) => wrap.append(h('span', { class: 'chipx' + (knownNpc(n) ? '' : ' bad'), title: knownNpc(n) ? '' : 'Not a type the server has' }, n,
     h('button', { type: 'button', onclick: () => { g.npcs.splice(i, 1); changed(); } }, 'x'))));
-  const inp = h('input', { list: 'npc-list', placeholder: g.npcs.length ? 'add another' : 'type an NPC type, Enter', onkeydown: (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); e.target.value = ''; if (v && g.npcs.length < 8) { g.npcs.push(v); changed(); } }
-  }, onchange: (e) => { const v = e.target.value.trim(); if (v && knownNpc(v) && g.npcs.length < 8) { e.target.value = ''; g.npcs.push(v); changed(); } } });
-  wrap.append(inp);
+  if (g.npcs.length < 8) {
+    wrap.append(combo({ items: npcItems, clearOnPick: true, placeholder: g.npcs.length ? 'add another' : 'Search ' + (S.npcs.length + S.scn.npcTypes.length) + ' NPC types',
+      onPick: (v) => { g.npcs.push(v); changed(); } }));
+  }
   return wrap;
 }
 
@@ -788,7 +964,8 @@ function renderGroups(el) {
     const card = h('div', { class: 'card' },
       h('div', { class: 'card-title' }, h('span', { class: 'tag group' }, 'group'), textIn(g, 'name', { maxlength: 47, class: 'grow' })),
       field('NPC types', npcChips(g), 'Spawned in turn. Up to 8.'),
-      field('Leader (optional)', h('input', { value: g.leader, list: 'npc-list', placeholder: 'spawns first, once', oninput: (e) => { g.leader = e.target.value.trim(); soft(); } })),
+      field('Leader (optional)', combo({ value: g.leader, items: npcItems, placeholder: 'spawns first, once - search NPC types',
+        onPick: (v) => { g.leader = v; changed(); }, onType: (v) => { g.leader = v; soft(); } })),
       h('div', { class: 'grid3' }, field('How many', numIn(g, 'count', { min: 0, max: 32 })), field('+ per player', numIn(g, 'perPlayer', { min: 0, max: 8 })), field('At most', numIn(g, 'max', { min: 1, max: 32 }))),
       field('Spawn at', selectIn(g, 'spawn', spawnOpts)),
       field('Behaviour', selectIn(g, 'behaviour', BEHAVIOURS)),
@@ -936,7 +1113,9 @@ async function save() {
   $('#save-state').textContent = 'Saving...';
   try {
     const r = await api('/api/scenarios/' + SCENARIO_ID, S.scn);
+    if (HIST.timer) commitHistory();
     S.scn = normalise(r.scenario);
+    resetHistoryBase();
     S.dirty = false;
     $('#save-state').textContent = 'Saved ' + new Date().toLocaleTimeString();
     toast('Saved.');
@@ -958,6 +1137,7 @@ async function load() {
     api('/api/models').catch(() => ({ models: [], weapons: [] })),
   ]);
   S.scn = normalise(scn.scenario);
+  resetHistoryBase();
   S.npcs = npcs.npcs;
   S.models = models.models;
   S.weapons = models.weapons;
@@ -1004,6 +1184,8 @@ document.querySelectorAll('.tool[data-tool]').forEach((b) => b.addEventListener(
 $('#fit-btn').addEventListener('click', fit);
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $('#save-btn').addEventListener('click', save);
+$('#undo-btn').addEventListener('click', undo);
+$('#redo-btn').addEventListener('click', redo);
 $('#checks-chip').addEventListener('click', () => showTab('checks'));
 $('#scn-name').addEventListener('input', (e) => { S.scn.name = e.target.value; soft(); });
 $('#show-labels').addEventListener('change', (e) => { S.labels = e.target.checked; draw(); });
@@ -1011,6 +1193,12 @@ $('#show-labels').addEventListener('change', (e) => { S.labels = e.target.checke
 window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  // Ctrl+Z / Ctrl+Y - in a text box, the box's own undo instead.
+  if ((e.ctrlKey || e.metaKey) && !typing) {
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+  }
   if (typing) return;
   if (e.key === ' ') { S.space = true; e.preventDefault(); return; }
   if (e.key === 'Enter' || e.key === 'Escape') { finishRoute(); draw(); return; }
