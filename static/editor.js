@@ -74,14 +74,20 @@ function pickZ(x, y) {
 
 // Paths for what's drawn at the current cut, rebuilt when it changes.
 const BAND = 450, BUCKETS = 12;
+// Floors under the cut: the ones in the band just below it bright (blue to
+// cyan, by height), and everything deeper in dimmer shades by height too -
+// still clearly there (a tall room's floor can be well below the cut).
+const DEEP = 6;
 function buildCache() {
   const G = S.geo, cut = S.cut, lo = cut - BAND;
-  const ghost = new Path2D(), buckets = Array.from({ length: BUCKETS }, () => new Path2D());
+  const deepSpan = Math.max(1, lo - G.zmin);
+  const ghost = Array.from({ length: DEEP }, () => new Path2D()), buckets = Array.from({ length: BUCKETS }, () => new Path2D());
   for (const i of G.order) {
     const z = G.avg[i];
     if (z > cut) break;
     const o = i * 9, t = G.tris;
-    const p = z < lo ? ghost : buckets[clamp(Math.floor((z - lo) / BAND * BUCKETS), 0, BUCKETS - 1)];
+    const p = z < lo ? ghost[clamp(Math.floor((z - G.zmin) / deepSpan * DEEP), 0, DEEP - 1)]
+      : buckets[clamp(Math.floor((z - lo) / BAND * BUCKETS), 0, BUCKETS - 1)];
     p.moveTo(t[o], t[o + 1]); p.lineTo(t[o + 3], t[o + 4]); p.lineTo(t[o + 6], t[o + 7]); p.closePath();
   }
   const walls = new Path2D();
@@ -94,9 +100,15 @@ function buildCache() {
   S.cache = { cut, ghost, buckets, walls };
 }
 
+function deepColour(k) {
+  const t = k / (DEEP - 1);
+  const a = [13, 32, 50], b = [20, 54, 82];
+  return 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',') + ')';
+}
+
 function bucketColour(k) {
   const t = k / (BUCKETS - 1);
-  const a = [10, 30, 48], b = [36, 128, 176];
+  const a = [24, 66, 100], b = [70, 176, 228];
   return 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',') + ')';
 }
 
@@ -156,11 +168,13 @@ function drawNow() {
   if (!S.cache || S.cache.cut !== S.cut) buildCache();
   const z = S.view.zoom;
   ctx.setTransform(DPR * z, 0, 0, -DPR * z, DPR * (W / 2 - S.view.cx * z), DPR * (H / 2 + S.view.cy * z));
-  ctx.fillStyle = 'rgba(70,200,255,0.07)';
-  ctx.fill(S.cache.ghost);
+  S.cache.ghost.forEach((p, k) => { ctx.fillStyle = deepColour(k); ctx.fill(p); });
   S.cache.buckets.forEach((p, k) => { ctx.fillStyle = bucketColour(k); ctx.fill(p); });
-  ctx.strokeStyle = 'rgba(150,225,255,0.85)';
-  ctx.lineWidth = 1.1 / z;
+  ctx.strokeStyle = 'rgba(4,12,22,0.75)';
+  ctx.lineWidth = 3 / z;
+  ctx.stroke(S.cache.walls);
+  ctx.strokeStyle = 'rgba(200,240,255,0.95)';
+  ctx.lineWidth = 1.2 / z;
   ctx.stroke(S.cache.walls);
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -746,9 +760,9 @@ function renderScenario(el) {
     ]), s.joinTeam && s.joinTeam !== 'any'
       ? 'Everyone plays on one side (so no friendly fire). Anyone who picks a ' + (s.joinTeam === 'team1' ? S.teams.team2 : S.teams.team1) + ' class is sent back to pick again.'
       : 'Side names are this map\'s own.'),
-    h('label', { class: 'check field' }, h('input', { type: 'checkbox', checked: !!s.anytimeSpawn, onchange: (e) => { s.anytimeSpawn = e.target.checked; changed(); } }),
-      ' Anytime spawn - join any time, and respawn after dying'),
-    s.anytimeSpawn ? field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 })) : null,
+    h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!s.anytimeSpawn, onchange: (e) => { s.anytimeSpawn = e.target.checked; changed(); } }),
+      h('span', {}, 'Anytime spawn - join any time, and respawn after dying')),
+    ...(s.anytimeSpawn ? [field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 }))] : []),
     h('div', { class: 'info' },
       h('b', {}, 'Playing it: '), 'on any server running the Holotable plugin, change to ', h('code', {}, s.map),
       ', log in (', h('code', {}, '!login'), ') and type ', h('code', {}, '!ht'), ' to list the map\'s scenarios. ',
