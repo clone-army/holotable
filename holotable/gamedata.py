@@ -58,13 +58,15 @@ def _refresh():
     sig = _signature()
     if _index["sig"] == sig:
         return
-    maps = {}
+    maps, sieges = {}, {}
     for name in _pk3s():
         path = os.path.join(config.GAMEDATA, name)
         try:
             with zipfile.ZipFile(path) as z:
                 for info in z.infolist():
                     low = info.filename.lower()
+                    if low.startswith("maps/") and low.endswith(".siege") and low.count("/") == 1:
+                        sieges[low[5:-6]] = (path, info.filename)
                     if low.startswith("maps/") and low.endswith(".bsp") and low.count("/") == 1:
                         mapname = info.filename[5:-4]
                         maps[mapname.lower()] = {"name": mapname, "pk3": path, "member": info.filename,
@@ -79,6 +81,7 @@ def _refresh():
                 maps[f[:-4].lower()] = {"name": f[:-4], "file": p, "size": os.path.getsize(p),
                                         "stamp": int(os.path.getmtime(p))}
     _index["maps"] = maps
+    _index["sieges"] = sieges
     _index["npcs"] = None
     _index["sig"] = sig
 
@@ -93,6 +96,28 @@ def find_map(name):
     with _lock:
         _refresh()
         return _index["maps"].get(str(name or "").lower())
+
+
+def map_teams(mapname):
+    """The map's names for its two sides, from maps/<map>.siege (team1 and
+    team2 - "Jedi" and "Sith"), or Team 1 / Team 2."""
+    with _lock:
+        _refresh()
+        hit = _index.get("sieges", {}).get(str(mapname or "").lower())
+    names = {"team1": "Team 1", "team2": "Team 2"}
+    if not hit:
+        return names
+    try:
+        with zipfile.ZipFile(hit[0]) as z:
+            text = z.read(hit[1]).decode("latin1")
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return names
+    text = re.sub(r"//[^\n]*", "", text)
+    for key in ("team1", "team2"):
+        m = re.search(r"\b" + key + r"\s+\"?([^\s\"{}]+)", text, re.I)
+        if m:
+            names[key] = m.group(1)
+    return names
 
 
 def _read_bsp(entry):
@@ -322,7 +347,7 @@ def _assets_index():
         _refresh()
         if _assets.get("sig") == _index["sig"]:
             return _assets
-        skins, icons, sounds = {}, {}, {}
+        skins, icons, sounds, effects = {}, {}, {}, {}
         for name in _pk3s():
             path = os.path.join(config.GAMEDATA, name)
             try:
@@ -342,10 +367,13 @@ def _assets_index():
                                 icons[(model.lower(), skin.lower())] = (path, member)
                         elif low.startswith("sound/") and low.endswith((".mp3", ".wav")):
                             sounds[low] = (path, member)
+                        elif low.startswith("effects/") and low.endswith(".efx"):
+                            # As the game names them: no "effects/", no ".efx".
+                            effects[low[8:-4]] = member[8:-4]
             except (zipfile.BadZipFile, OSError):
                 continue
         _assets.update(sig=_index["sig"], skins=skins, icons=icons, sounds=sounds,
-                       sound_list=sorted(sounds))
+                       sound_list=sorted(sounds), effect_list=sorted(effects.values(), key=str.lower))
         return _assets
 
 
@@ -386,6 +414,39 @@ def search_sounds(query, limit=60):
             if len(out) >= limit:
                 break
     return out
+
+
+def search_effects(query, limit=60):
+    a = _assets_index()
+    words = [w for w in str(query or "").lower().replace("\\", "/").split() if w]
+    if not words:
+        return []
+    return [e for e in a["effect_list"] if all(w in e.lower() for w in words)][:limit]
+
+
+def map_targets(mapname):
+    """The map's own entities other things can set off - doors, lifts,
+    buttons, relays... - by targetname, from the .bsp's entity list."""
+    entry = find_map(mapname)
+    if not entry:
+        return []
+    data = _read_bsp(entry)
+    eo, el = struct.unpack_from("<ii", data, 8)
+    ents = data[eo: eo + el].decode("latin1", "replace")
+    out = {}
+    for block in re.findall(r"\{[^{}]*\}", ents):
+        name = re.search(r'"targetname"\s+"([^"]+)"', block)
+        cls = re.search(r'"classname"\s+"([^"]+)"', block)
+        if not name:
+            continue
+        org = re.search(r'"origin"\s+"([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)"', block)
+        item = out.setdefault(name.group(1), {"target": name.group(1), "classes": set(), "count": 0, "at": None})
+        item["classes"].add(cls.group(1) if cls else "?")
+        item["count"] += 1
+        if org and not item["at"]:
+            item["at"] = [round(float(org.group(i))) for i in (1, 2, 3)]
+    return sorted(({"target": v["target"], "classes": sorted(v["classes"]), "count": v["count"], "at": v["at"]}
+                   for v in out.values()), key=lambda v: v["target"].lower())
 
 
 def sound_file(path):

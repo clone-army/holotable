@@ -12,7 +12,7 @@ const round1 = (v) => Math.round(v * 10) / 10;
 const S = {
   scn: null, geo: null, dirty: false, tool: 'select', sel: null, drafting: null, drag: null,
   view: { cx: 0, cy: 0, zoom: 0.1 }, cut: 0, labels: true, hover: null, space: false,
-  npcs: [], models: [], weapons: [], problems: [], crossings: {}, cache: null,
+  npcs: [], models: [], weapons: [], problems: [], crossings: {}, cache: null, teams: { team1: 'Team 1', team2: 'Team 2' },
 };
 const canvas = $('#map');
 const ctx = canvas.getContext('2d');
@@ -566,7 +566,16 @@ function validate() {
     if (t.when === 'group_dead' && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
     if (t.when === 'after' && !trigIds.has(t.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger it follows.', { tab: 'triggers' });
     if (!t.actions.length) add('warn', 'Trigger "' + nm + '" does nothing - add an action.', { tab: 'triggers' });
+    if ((t.when === 'all_in_area') && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
+    if ((t.when === 'group_left') && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
+    const placeIds = new Set([...pointIds, ...areaIds]);
+    const hasPlayer = whenHasPlayer(t);
     t.actions.forEach((a) => {
+      if (a.do === 'tell' && !hasPlayer) add('warn', 'Trigger "' + nm + '": "Tell the player" needs a trigger one player sets off (walks into an area, dies).', { tab: 'triggers' });
+      if (['explode', 'effect'].includes(a.do) && !placeIds.has(a.at) && !(a.at === 'player' && hasPlayer)) add('error', 'Trigger "' + nm + '": pick where the ' + (a.do === 'explode' ? 'explosion' : 'effect') + ' happens.', { tab: 'triggers' });
+      if (a.do === 'teleport' && !placeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where to teleport them to.', { tab: 'triggers' });
+      if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
+      if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
       if (a.do === 'spawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Spawn action has no group.', { tab: 'triggers' });
       if (a.do === 'say' && !a.text && !a.path) add('warn', 'Trigger "' + nm + '": a Say action is empty.', { tab: 'triggers' });
     });
@@ -726,7 +735,18 @@ function renderScenario(el) {
   el.append(
     field('Name', textIn(s, 'name', { maxlength: 60 }, () => { $('#scn-name').value = s.name; })),
     field('Description', textIn(s, 'description', { maxlength: 200, placeholder: 'Shown in the !ht list' })),
-    field('Time limit (minutes)', h('input', { type: 'number', min: 1, max: 60, value: Math.round(s.timeLimit / 60), oninput: (e) => { s.timeLimit = clamp(Math.round(+e.target.value * 60) || 900, 30, 3600); soft(); } }), 'It ends by itself after this long.'),
+    field('Time limit (minutes)', h('input', { type: 'number', min: 1, max: 60, value: Math.round(s.timeLimit / 60), oninput: (e) => { s.timeLimit = clamp(Math.round(+e.target.value * 60) || 900, 30, 3600); soft(); } }), 'It ends by itself after this long. The round clock is held open for it.'),
+    h('h3', {}, 'Players'),
+    field('Players can join', selectIn(s, 'joinTeam', [
+      { v: 'any', t: 'Either team (team balance as normal)' },
+      { v: 'team1', t: 'Only ' + S.teams.team1 + ' - co-op, balance off' },
+      { v: 'team2', t: 'Only ' + S.teams.team2 + ' - co-op, balance off' },
+    ]), s.joinTeam && s.joinTeam !== 'any'
+      ? 'Everyone plays on one side (so no friendly fire). Anyone who picks a ' + (s.joinTeam === 'team1' ? S.teams.team2 : S.teams.team1) + ' class is sent back to pick again.'
+      : 'Side names are this map\'s own.'),
+    h('label', { class: 'check field' }, h('input', { type: 'checkbox', checked: !!s.anytimeSpawn, onchange: (e) => { s.anytimeSpawn = e.target.checked; changed(); } }),
+      ' Anytime spawn - join any time, and respawn after dying'),
+    s.anytimeSpawn ? field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 })) : null,
     h('div', { class: 'info' },
       h('b', {}, 'Playing it: '), 'on a social server running ', h('code', {}, s.map), ', log in and type ', h('code', {}, '!ht'),
       ' to list its scenarios, then ', h('code', {}, '!ht <n> play'), ' (admins). ', h('code', {}, '!ht stop'), ' ends it.'),
@@ -981,29 +1001,66 @@ function renderGroups(el) {
   } }, '+ New group'));
 }
 
+// "When" choices. player: the trigger knows who set it off (for "tell",
+// "teleport them" and "at the player").
 const WHENS = [
   { v: 'start', t: 'The scenario starts' },
-  { v: 'timer', t: 'Some seconds after the start' },
-  { v: 'enter_area', t: 'A player walks into an area' },
+  { v: 'timer', t: 'Some seconds after the start (or every N seconds)' },
+  { v: 'enter_area', t: 'A player walks into an area', player: true },
+  { v: 'all_in_area', t: 'Every player is inside an area' },
   { v: 'group_dead', t: 'A group is all down' },
+  { v: 'group_left', t: 'A group is down to N or fewer' },
   { v: 'all_dead', t: 'Every NPC so far is down' },
+  { v: 'npc_killed', t: 'Any scenario NPC is killed' },
+  { v: 'player_died', t: 'A player dies', player: true },
+  { v: 'players', t: 'N or more players are in the game' },
   { v: 'after', t: 'Some seconds after another trigger' },
 ];
 const ACTION_TYPES = [
   { v: 'spawn', t: 'Spawn a group' },
-  { v: 'say', t: 'An NPC says something' },
-  { v: 'message', t: 'Chat message' },
-  { v: 'center', t: 'Big centre message' },
+  { v: 'despawn', t: 'Remove a group' },
+  { v: 'say', t: 'An NPC says something (everyone)' },
+  { v: 'tell', t: 'Tell the player who set it off (only them)' },
+  { v: 'message', t: 'Chat message (everyone)' },
+  { v: 'center', t: 'Big centre message (everyone)' },
+  { v: 'explode', t: 'Explosion (hurts players and NPCs)' },
+  { v: 'effect', t: 'Visual effect' },
+  { v: 'shake', t: 'Shake the screen' },
   { v: 'sound', t: 'Play a sound' },
   { v: 'music', t: 'Change the music' },
+  { v: 'teleport', t: 'Teleport players' },
+  { v: 'use', t: 'Use a map entity (door, lift, button...)' },
   { v: 'end', t: 'End the scenario' },
 ];
+const whenHasPlayer = (t) => !!(WHENS.find((w) => w.v === t.when) || {}).player;
+
+// Where an action happens: a point, an area's middle, or the player who set
+// it off (only offered on triggers that have one).
+function placeSelect(obj, t, noneLabel) {
+  const s = S.scn;
+  const opts = [{ v: '', t: noneLabel || '- pick a place -' }]
+    .concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.areas.map((a) => ({ v: a.id, t: 'Area: ' + a.name + ' (middle)' })));
+  if (whenHasPlayer(t) || obj.at === 'player') opts.push({ v: 'player', t: 'Where the player who set it off is' });
+  return selectIn(obj, 'at', opts);
+}
 
 function soundPicker(obj, key, placeholder) {
   const inp = h('input', { value: obj[key] || '', placeholder: placeholder || 'sound/...', oninput: (e) => { obj[key] = e.target.value.trim(); soft(); } });
   const play = h('button', { type: 'button', class: 'btn tiny', title: 'Listen', onclick: () => playSound(obj[key]) }, '▶');
-  const find = h('button', { type: 'button', class: 'btn tiny', onclick: () => openSoundSearch((p) => { obj[key] = p; inp.value = p; soft(); }) }, 'Find');
+  const find = h('button', { type: 'button', class: 'btn tiny', onclick: () => openSearch({
+    title: 'Find a sound', url: '/api/sounds', key: 'sounds', play: true,
+    hint: 'Search the game\'s sounds, e.g. "rex taunt", "battledroid", "explosion".',
+    onPick: (p) => { obj[key] = p; inp.value = p; soft(); } }) }, 'Find');
   return h('div', { class: 'input-row' }, inp, play, find);
+}
+
+function effectPicker(obj, key) {
+  const inp = h('input', { value: obj[key] || '', placeholder: 'e.g. Grenades/EXP_BaseThermal', oninput: (e) => { obj[key] = e.target.value.trim(); soft(); } });
+  const find = h('button', { type: 'button', class: 'btn tiny', onclick: () => openSearch({
+    title: 'Find an effect', url: '/api/effects', key: 'effects',
+    hint: 'Search the game\'s effects, e.g. "explosion", "smoke", "fire", "sparks". Effects from optional map packs only show for players who have them - the MBII ones (Grenades/, env/, explosions/...) are safest.',
+    onPick: (p) => { obj[key] = p; inp.value = p; soft(); } }) }, 'Find');
+  return h('div', { class: 'input-row' }, inp, find);
 }
 
 function playSound(path) {
@@ -1013,76 +1070,152 @@ function playSound(path) {
   a.play().catch(() => toast('Can\'t play that one here (not found, or not a sound file).', true));
 }
 
-function openSoundSearch(onPick) {
+function openSearch({ title, url, key, hint, play, onPick }) {
   const dlg = h('dialog', { class: 'sound-dlg' });
-  const results = h('div', { class: 'sound-results' }, h('p', { class: 'muted small' }, 'Search the game\'s sounds, e.g. "rex taunt", "battledroid", "cody anger".'));
+  const results = h('div', { class: 'sound-results' }, h('p', { class: 'muted small' }, hint || ''));
   let timer = null;
-  const q = h('input', { type: 'search', placeholder: 'Search sounds', autofocus: true, oninput: () => {
+  const q = h('input', { type: 'search', placeholder: 'Search', autofocus: true, oninput: () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       if (q.value.trim().length < 2) return;
       try {
-        const r = await api('/api/sounds?q=' + encodeURIComponent(q.value));
+        const r = await api(url + '?q=' + encodeURIComponent(q.value));
         results.innerHTML = '';
-        if (!r.sounds.length) results.append(h('p', { class: 'muted small' }, 'Nothing found.'));
-        r.sounds.forEach((p) => results.append(h('div', { class: 'sound-row' },
-          h('button', { class: 'btn tiny', type: 'button', onclick: () => playSound(p) }, '▶'),
+        if (!r[key].length) results.append(h('p', { class: 'muted small' }, 'Nothing found.'));
+        r[key].forEach((p) => results.append(h('div', { class: 'sound-row' },
+          play ? h('button', { class: 'btn tiny', type: 'button', onclick: () => playSound(p) }, '▶') : null,
           h('code', { class: 'grow' }, p),
           h('button', { class: 'btn tiny primary', type: 'button', onclick: () => { onPick(p); dlg.close(); } }, 'Use'))));
       } catch (err) { toast(err.message, true); }
     }, 250);
   } });
-  dlg.append(h('div', { class: 'dlg-head' }, h('b', {}, 'Find a sound'), h('button', { class: 'btn tiny', type: 'button', onclick: () => dlg.close() }, 'Close')), q, results);
+  dlg.append(h('div', { class: 'dlg-head' }, h('b', {}, title), h('button', { class: 'btn tiny', type: 'button', onclick: () => dlg.close() }, 'Close')), q, results);
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
   dlg.showModal();
 }
 
+// The map's own doors, lifts, buttons... (by targetname), loaded once.
+let mapTargets = null;
+async function loadTargets() {
+  if (mapTargets) return mapTargets;
+  try { mapTargets = (await api('/api/maps/' + encodeURIComponent(S.scn.map) + '/targets')).targets; }
+  catch (e) { mapTargets = []; }
+  return mapTargets;
+}
+function targetItems() {
+  return (mapTargets || []).map((t) => ({ value: t.target, sub: t.classes.join(', ') + (t.count > 1 ? ' (' + t.count + ')' : '') + (t.at ? ' - at ' + t.at.join(' ') : '') }));
+}
+
 function actionRow(t, a, i) {
   const s = S.scn;
   const row = h('div', { class: 'action' });
-  const kind = selectIn(a, 'do', ACTION_TYPES, () => {
-    for (const k of ['group', 'text', 'path', 'speaker']) if (k in a && !(a.do === 'spawn' && k === 'group')) delete a[k];
-    renderPanels('triggers');
-  });
-  row.append(h('div', { class: 'input-row' }, kind, h('button', { class: 'btn tiny danger', type: 'button', title: 'Remove', onclick: () => { t.actions.splice(i, 1); changed(); } }, 'x')));
-  if (a.do === 'spawn') row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name })))));
-  if (a.do === 'say') {
-    row.append(h('div', { class: 'grid-say' }, textIn(a, 'speaker', { placeholder: 'Who (e.g. Captain Rex)', maxlength: 40 }), textIn(a, 'text', { placeholder: 'What they say', maxlength: 190 })));
-    row.append(soundPicker(a, 'path', 'voice sound (optional)'));
+  // A new kind: its own fields, with sensible defaults - one undo step.
+  const kind = h('select', { onchange: (e) => {
+    for (const k of Object.keys(a)) delete a[k];
+    a.do = e.target.value;
+    if (a.do === 'explode') Object.assign(a, { damage: 60, radius: 250, effect: 'Grenades/EXP_BaseThermal', path: 'sound/weapons/thermal/explode.mp3', at: '' });
+    if (a.do === 'shake') Object.assign(a, { intensity: 4, seconds: 1, at: '' });
+    if (a.do === 'tell') a.style = 'center';
+    if (a.do === 'teleport') a.who = whenHasPlayer(t) ? 'player' : 'all';
+    changed();
+  } }, ACTION_TYPES.map((o) => h('option', { value: o.v, selected: o.v === a.do }, o.t)));
+  row.append(h('div', { class: 'input-row' }, kind,
+    h('button', { class: 'btn tiny', type: 'button', title: 'Move up', disabled: i === 0, onclick: () => { t.actions.splice(i - 1, 0, t.actions.splice(i, 1)[0]); changed(); } }, '↑'),
+    h('button', { class: 'btn tiny danger', type: 'button', title: 'Remove', onclick: () => { t.actions.splice(i, 1); changed(); } }, 'x')));
+  const groupSel = () => selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name }))));
+  switch (a.do) {
+    case 'spawn': case 'despawn':
+      row.append(groupSel());
+      break;
+    case 'say':
+      row.append(h('div', { class: 'grid-say' }, textIn(a, 'speaker', { placeholder: 'Who (e.g. Captain Rex)', maxlength: 40 }), textIn(a, 'text', { placeholder: 'What they say', maxlength: 190 })));
+      row.append(soundPicker(a, 'path', 'voice sound (optional)'));
+      break;
+    case 'tell':
+      row.append(textIn(a, 'text', { maxlength: 190, placeholder: 'What they see - ^1 ^2 ^3... colour codes work' }),
+        selectIn(a, 'style', [{ v: 'center', t: 'Big, centre of their screen' }, { v: 'chat', t: 'In their chat' }]));
+      if (!whenHasPlayer(t)) row.append(h('div', { class: 'warnline' }, 'This trigger isn\'t set off by one player, so nobody will see it. Use it with "A player walks into an area" or "A player dies".'));
+      break;
+    case 'message': case 'center': case 'end':
+      row.append(textIn(a, 'text', { maxlength: 190, placeholder: a.do === 'end' ? 'Big message as it ends (optional)' : 'Text - ^1 ^2 ^3... colour codes work' }));
+      break;
+    case 'sound':
+      row.append(soundPicker(a, 'path'), placeSelect(a, t, 'Everyone hears it (not at a place)'));
+      break;
+    case 'music':
+      row.append(textIn(a, 'path', { placeholder: 'music/... e.g. music/sailbargealternate', maxlength: 120 }));
+      break;
+    case 'explode':
+      row.append(placeSelect(a, t),
+        h('div', { class: 'grid2' }, field('Damage (at the middle)', numIn(a, 'damage', { min: 0, max: 1000 })), field('Radius', numIn(a, 'radius', { min: 16, max: 2048 }))),
+        field('Effect', effectPicker(a, 'effect')), field('Sound', soundPicker(a, 'path')));
+      break;
+    case 'effect':
+      row.append(placeSelect(a, t), field('Effect', effectPicker(a, 'effect')), field('Sound (optional)', soundPicker(a, 'path')));
+      break;
+    case 'shake':
+      row.append(placeSelect(a, t, 'Everyone, wherever they are'),
+        h('div', { class: 'grid2' }, field('Strength', numIn(a, 'intensity', { min: 0.5, max: 20, step: 0.5 })), field('Seconds', numIn(a, 'seconds', { min: 0.1, max: 10, step: 0.1 }))));
+      break;
+    case 'teleport':
+      row.append(selectIn(a, 'who', whenHasPlayer(t)
+        ? [{ v: 'player', t: 'The player who set it off' }, { v: 'all', t: 'Every player' }]
+        : [{ v: 'all', t: 'Every player' }]));
+      if (!whenHasPlayer(t) && a.who !== 'all') { a.who = 'all'; }
+      row.append(selectIn(a, 'at', [{ v: '', t: '- to where -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name + ' (facing its way)' })), s.areas.map((q) => ({ v: q.id, t: 'Area: ' + q.name + ' (middle)' })))));
+      break;
+    case 'use': {
+      const box = h('div', {});
+      loadTargets().then((list) => {
+        box.append(combo({ value: a.target || '', items: targetItems, placeholder: list.length ? 'Search ' + list.length + ' map entities' : 'This map has no named entities',
+          onPick: (v) => { a.target = v; soft(); }, onType: (v) => { a.target = v; soft(); } }),
+        h('small', { class: 'muted' }, 'Sets off everything with that targetname, as a button would - doors open, lifts move, relays fire.'));
+      });
+      row.append(box);
+      break;
+    }
   }
-  if (a.do === 'message' || a.do === 'center' || a.do === 'end') row.append(textIn(a, 'text', { maxlength: 190, placeholder: a.do === 'end' ? 'Big message as it ends (optional)' : 'Text - ^1 ^2 ^3... colour codes work' }));
-  if (a.do === 'sound') row.append(soundPicker(a, 'path'));
-  if (a.do === 'music') row.append(textIn(a, 'path', { placeholder: 'music/... e.g. music/sailbargealternate', maxlength: 120 }));
   return row;
 }
 
 function renderTriggers(el) {
   const s = S.scn;
-  el.append(h('p', { class: 'muted' }, 'When something happens, do things. Each trigger fires once.'));
+  el.append(h('p', { class: 'muted' }, 'When something happens, do things - in order, top to bottom.'));
   s.triggers.forEach((t, i) => {
     const card = h('div', { class: 'card' },
       h('div', { class: 'card-title' }, h('span', { class: 'tag trigger' }, 'trigger'), textIn(t, 'name', { maxlength: 47, class: 'grow' })),
       field('When', selectIn(t, 'when', WHENS)));
-    if (t.when === 'timer') card.append(field('Seconds after the start', numIn(t, 'seconds', { min: 0, max: 3600 })));
-    if (t.when === 'enter_area') card.append(field('Area', selectIn(t, 'area', [{ v: '', t: '- pick -' }].concat(s.areas.map((a) => ({ v: a.id, t: a.name }))))));
-    if (t.when === 'group_dead') card.append(field('Group', selectIn(t, 'group', [{ v: '', t: '- pick -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name }))))));
+    const areaSel = () => field('Area', selectIn(t, 'area', [{ v: '', t: '- pick -' }].concat(s.areas.map((a) => ({ v: a.id, t: a.name })))));
+    const groupSel = () => field('Group', selectIn(t, 'group', [{ v: '', t: '- pick -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name })))));
+    if (t.when === 'timer') card.append(field(t.repeat ? 'Every (seconds)' : 'Seconds after the start', numIn(t, 'seconds', { min: 0, max: 3600 })));
+    if (t.when === 'enter_area' || t.when === 'all_in_area') card.append(areaSel());
+    if (t.when === 'group_dead') card.append(groupSel());
+    if (t.when === 'group_left') card.append(h('div', { class: 'grid2' }, groupSel(), field('N or fewer left', numIn(t, 'count', { min: 0, max: 32 }))));
+    if (t.when === 'players') card.append(field('Players in the game', numIn(t, 'count', { min: 1, max: 64 })));
     if (t.when === 'after') {
       const others = [{ v: '', t: '- pick -' }].concat(s.triggers.filter((x) => x !== t).map((x) => ({ v: x.id, t: x.name })));
       card.append(h('div', { class: 'grid2' },
         field('Trigger', selectIn(t, 'trigger', others)),
         field('Seconds later', numIn(t, 'seconds', { min: 0, max: 3600 }))));
     }
+    if (t.when !== 'start') {
+      card.append(h('div', { class: 'grid2' },
+        field('Fires', h('select', { onchange: (e) => { t.repeat = e.target.value === 'every'; changed(); } },
+          h('option', { value: 'once', selected: !t.repeat }, 'Once'), h('option', { value: 'every', selected: !!t.repeat }, 'Every time'))),
+        t.repeat ? field('No more often than (seconds)', numIn(t, 'cooldown', { min: 1, max: 3600 })) : h('span')));
+    }
     const acts = h('div', { class: 'actions-list' });
     t.actions.forEach((a, j) => acts.append(actionRow(t, a, j)));
     card.append(h('div', { class: 'sub' }, 'Then'), acts,
       h('div', { class: 'row-end' },
-        h('button', { class: 'btn small', onclick: () => { t.actions.push({ do: 'say', speaker: '', text: '' }); changed(); } }, '+ Action'),
+        h('button', { class: 'btn small', onclick: () => { t.actions.push({ do: whenHasPlayer(t) ? 'tell' : 'center', text: '', style: 'center' }); changed(); } }, '+ Action'),
         h('button', { class: 'btn small danger', onclick: () => { s.triggers.splice(i, 1); changed(); } }, 'Delete trigger')));
     el.append(card);
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
     s.triggers.push({ id: uid('t'), name: nextName(s.triggers, 'Trigger'), when: s.triggers.length ? 'all_dead' : 'start', area: '', group: '', trigger: '', seconds: 0,
+      count: 0, repeat: false, cooldown: 5,
       actions: [s.groups[0] ? { do: 'spawn', group: s.groups[0].id } : { do: 'center', text: '' }] });
     changed();
   } }, '+ New trigger'));
@@ -1102,6 +1235,8 @@ function renderChecks(el) {
 
 function normalise(s) {
   for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes']) if (!Array.isArray(s[k])) s[k] = [];
+  if (!s.joinTeam) s.joinTeam = 'any';
+  if (!s.respawnSeconds) s.respawnSeconds = 5;
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });
   s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; });
   s.triggers.forEach((t) => { if (!Array.isArray(t.actions)) t.actions = []; });
@@ -1136,6 +1271,7 @@ async function load() {
     api('/api/npcs').catch(() => ({ npcs: [] })),
     api('/api/models').catch(() => ({ models: [], weapons: [] })),
   ]);
+  try { S.teams = (await api('/api/maps/' + encodeURIComponent(scn.scenario.map) + '/teams')).teams; } catch (e) { /* Team 1 / 2 */ }
   S.scn = normalise(scn.scenario);
   resetHistoryBase();
   S.npcs = npcs.npcs;

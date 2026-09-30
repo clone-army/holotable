@@ -151,6 +151,12 @@ def api_geometry(name):
     return Response(blob, mimetype="application/json", headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600"})
 
 
+@app.route("/api/maps/<name>/teams")
+@login_required
+def api_map_teams(name):
+    return ok(teams=gamedata.map_teams(name))
+
+
 @app.route("/api/npcs")
 @login_required
 def api_npcs():
@@ -172,6 +178,21 @@ def api_model_icon(model, skin):
         return Response('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>', mimetype="image/svg+xml",
                         headers={"Cache-Control": "private, max-age=3600", "X-No-Icon": "1"})
     return Response(hit[0], mimetype=hit[1], headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.route("/api/effects")
+@login_required
+def api_effects():
+    return ok(effects=gamedata.search_effects(request.args.get("q", "")))
+
+
+@app.route("/api/maps/<name>/targets")
+@login_required
+def api_map_targets(name):
+    try:
+        return ok(targets=gamedata.map_targets(name))
+    except Exception as e:
+        return fail("Couldn't read that map: {}".format(e), 500)
 
 
 @app.route("/api/sounds")

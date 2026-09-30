@@ -6,7 +6,7 @@ own NPCs, and chain up what happens: *a player walks into the hangar → droids
 pour in → all down → "Reinforcements!" → wave two → the end.*
 
 Scenarios are saved as JSON into the game folder, where a server with the
-Clone Army OpenJK engine and MBIIEZ's Holotable plugin picks them up. In game, log in and type `!ht` to list
+Clone Army OpenJK engine picks them up. In game, log in and type `!ht` to list
 the scenarios for the map that's on, then `!ht <n> play` (admins) to run one.
 
 ## What's in it
@@ -33,6 +33,9 @@ the scenarios for the map that's on, then `!ht <n> play` (admins) to run one.
   a group, an NPC says something (a chat line under their name, with a voice
   sound - search the game's 24,000 sounds and listen in the browser), a chat or
   centre message, a sound, music, or end it.
+- **Players.** Either side as normal, or co-op: everyone on one side (the map's
+  own names for them), team balance off. Anytime spawn lets players join any
+  time and respawn a few seconds after dying, while the scenario runs.
 - **Checks.** What's missing or likely to go wrong, before you try it.
 - **Accounts.** The first admin comes from `.env`; admins add more on the Users
   page. For now anyone logged in can edit any scenario.
@@ -64,6 +67,9 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   "map": "uM_Cantina",
   "description": "Droids at the back door",
   "timeLimit": 900,
+  "joinTeam": "team1",
+  "anytimeSpawn": true,
+  "respawnSeconds": 5,
   "points":   [{ "id": "p_x1", "name": "Back door", "x": 3987, "y": -1472, "z": -1716, "yaw": 90 }],
   "routes":   [{ "id": "r_x1", "name": "Round the bar", "points": [{ "x": 3999, "y": -1668, "z": -1728 }] }],
   "areas":    [{ "id": "a_x1", "name": "Bar", "x": 4008, "y": -550, "z": -1768, "radius": 200, "height": 128 }],
@@ -80,12 +86,37 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 }
 ```
 
-- `when`: `start`, `timer` (`seconds` after the start), `enter_area` (`area`),
-  `group_dead` (`group`), `all_dead`, `after` (`trigger`, `seconds` later).
-  Each trigger fires once.
-- `do`: `spawn` (`group`), `say` (`speaker`, `text`, optional `path` sound),
-  `message` / `center` (`text`), `sound` (`path`), `music` (`path`), `end`
-  (optional `text`).
+- `joinTeam`: `any` (either side, team balance as normal), or `team1` / `team2`
+  for co-op - everyone on that side (the map's `.siege` names it, e.g. Jedi /
+  Sith), team balance off, and anyone picking a class on the other side sent
+  back to pick again. `anytimeSpawn`: players join any time and respawn
+  `respawnSeconds` after dying. Both last only while the scenario runs, and the
+  round clock is held open for its time limit.
+- `when`: `start`; `timer` (`seconds` after the start); `enter_area` (`area` -
+  a player walks in); `all_in_area` (`area` - every player is in it);
+  `group_dead` (`group`); `group_left` (`group`, `count` or fewer left);
+  `all_dead`; `npc_killed` (any scenario NPC); `player_died`; `players`
+  (`count` or more in the game); `after` (`trigger`, `seconds` later).
+- `repeat`: `false` fires once; `true` fires every time, no more often than
+  `cooldown` seconds (a repeating `timer` goes off every `seconds`). Conditions
+  fire as they become true.
+- `do`:
+  - `spawn` / `despawn` (`group`) - bring a group in, or remove what's left of it
+  - `say` (`speaker`, `text`, optional `path` voice sound) - an NPC's chat line, everyone
+  - `tell` (`text`, `style` `center` or `chat`) - only the player who set it off
+    (`enter_area` and `player_died` triggers)
+  - `message` / `center` (`text`) - everyone
+  - `explode` (`at`, `damage`, `radius`, `effect`, `path` sound) - hurts players
+    and NPCs in range, less further out, and shakes the screen
+  - `effect` (`at`, `effect`, optional `path`), `shake` (`at` or everywhere,
+    `intensity`, `seconds`), `sound` (`path`, optional `at` - otherwise everyone)
+  - `teleport` (`at`, `who` `player` or `all`)
+  - `use` (`target`) - sets off the map's own entities with that targetname,
+    as a button would: doors, lifts, relays
+  - `music` (`path`), `end` (optional `text`)
+- `at` is a point or area id, or `player` (where the player who set it off is).
+  Effects are named as the game names them (`Grenades/EXP_BaseThermal`, no
+  `effects/` or `.efx`).
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `engage` is how close a
   player comes before a route walker or guard goes for them.
 - Coordinates are the game's own (as `/viewpos` shows); `z` is the floor.
@@ -95,9 +126,6 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 The engine part lives in the Clone Army OpenJK fork (`codemp/server/social.cpp`,
 "Holotable scenarios"): it lists `holotable/*.json` files for the current map
 from every search path, and runs one on `!ht <n> play` - spawning, NPC
-behaviour and triggers. It's on for any server with `g_holotable 1` - in
-[MBIIEZ](https://github.com/clone-army/mbiiez), tick the **Holotable** plugin
-for the server. Logging in is the Credit System's `!login`, and admins are the
-accounts ticked on MBIIEZ's Economy page. On a social server only scenario NPCs
-and players hurt each other; elsewhere MBII's usual damage rules apply. rcon
-`ht`, `ht <n> play` and `ht stop` do the same without logging in.
+behaviour, triggers, and damage between players and scenario NPCs. It runs on
+social-mode servers (`g_socialMode 1`) for now. rcon `ht`, `ht <n> play` and
+`ht stop` do the same without logging in.

@@ -16,8 +16,10 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,62}$")
 _lock = threading.Lock()
 
 BEHAVIOURS = ("hunt", "route", "guard", "idle")
-WHENS = ("start", "timer", "enter_area", "group_dead", "all_dead", "after")
-ACTIONS = ("spawn", "say", "message", "center", "sound", "music", "end")
+WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
+         "player_died", "npc_killed", "after")
+ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
+           "teleport", "use", "despawn", "end")
 _NPC_NAME = re.compile(r"^HT_[A-Za-z0-9_]{1,40}$")
 
 
@@ -39,6 +41,7 @@ def blank(name, mapname, author):
         "map": mapname,
         "description": "",
         "timeLimit": 900,
+        "joinTeam": "any", "anytimeSpawn": False, "respawnSeconds": 5,
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
         "created": int(time.time()), "createdBy": author,
         "updated": int(time.time()), "updatedBy": author,
@@ -157,6 +160,10 @@ def clean(data):
         "map": _text(data.get("map"), 64),
         "description": _text(data.get("description"), 200),
         "timeLimit": int(max(30, min(3600, _num(data.get("timeLimit"), 900)))),
+        # Players: which side(s) they can join, and whether they respawn.
+        "joinTeam": data.get("joinTeam") if data.get("joinTeam") in ("any", "team1", "team2") else "any",
+        "anytimeSpawn": bool(data.get("anytimeSpawn")),
+        "respawnSeconds": int(max(1, min(60, _num(data.get("respawnSeconds"), 5)))),
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
     }
     for p in lst("points")[:64]:
@@ -190,22 +197,48 @@ def clean(data):
         for a in (t.get("actions") or [])[:8]:
             if not isinstance(a, dict) or a.get("do") not in ACTIONS:
                 continue
-            act = {"do": a["do"]}
-            if a["do"] == "spawn":
+            d = a["do"]
+            act = {"do": d}
+            if d in ("spawn", "despawn"):
                 act["group"] = _text(a.get("group"), 39)
-            elif a["do"] == "say":
+            elif d == "say":
                 act["speaker"] = _text(a.get("speaker"), 40)
                 act["text"] = _text(a.get("text"), 190)
                 act["path"] = _text(a.get("path"), 120)
-            elif a["do"] in ("sound", "music"):
+            elif d == "tell":
+                act["text"] = _text(a.get("text"), 190)
+                act["style"] = "center" if a.get("style") == "center" else "chat"
+            elif d == "sound":
                 act["path"] = _text(a.get("path"), 120)
+                act["at"] = _text(a.get("at"), 39)
+            elif d == "music":
+                act["path"] = _text(a.get("path"), 120)
+            elif d in ("explode", "effect", "shake"):
+                act["at"] = _text(a.get("at"), 39)
+                if d != "shake":
+                    act["effect"] = _text(a.get("effect"), 95)
+                    act["path"] = _text(a.get("path"), 120)
+                if d == "explode":
+                    act["damage"] = int(max(0, min(1000, _num(a.get("damage"), 60))))
+                    act["radius"] = int(max(16, min(2048, _num(a.get("radius"), 250))))
+                if d == "shake":
+                    act["intensity"] = round(max(0.5, min(20, _num(a.get("intensity"), 4))), 1)
+                    act["seconds"] = round(max(0.1, min(10, _num(a.get("seconds"), 1))), 1)
+            elif d == "teleport":
+                act["at"] = _text(a.get("at"), 39)
+                act["who"] = "all" if a.get("who") == "all" else "player"
+            elif d == "use":
+                act["target"] = _text(a.get("target"), 63)
             else:
                 act["text"] = _text(a.get("text"), 190)
             acts.append(act)
         out["triggers"].append({
             "id": _text(t.get("id"), 39), "name": _text(t.get("name"), 47), "when": when,
             "area": _text(t.get("area"), 39), "group": _text(t.get("group"), 39), "trigger": _text(t.get("trigger"), 39),
-            "seconds": round(max(0, min(3600, _num(t.get("seconds"), 0))), 1), "actions": acts,
+            "seconds": round(max(0, min(3600, _num(t.get("seconds"), 0))), 1),
+            "count": int(max(0, min(64, _num(t.get("count"), 0)))),
+            "repeat": bool(t.get("repeat")), "cooldown": round(max(1, min(3600, _num(t.get("cooldown"), 5))), 1),
+            "actions": acts,
         })
     for n in lst("npcTypes")[:24]:
         if not isinstance(n, dict):
