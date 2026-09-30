@@ -6,7 +6,7 @@ own NPCs, and chain up what happens: *a player walks into the hangar → droids
 pour in → all down → "Reinforcements!" → wave two → the end.*
 
 Scenarios are saved as JSON into the game folder, where a server with the
-Clone Army OpenJK engine picks them up. In game, log in and type `!ht` to list
+Clone Army OpenJK engine and MBIIEZ's Holotable plugin picks them up. In game, log in and type `!ht` to list
 the scenarios for the map that's on, then `!ht <n> play` (admins) to run one.
 Saved a change while it's running? `!ht restart` reloads it from the file and starts it over.
 
@@ -127,6 +127,10 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 The engine part lives in the Clone Army OpenJK fork (`codemp/server/social.cpp`,
 "Holotable scenarios"): it lists `holotable/*.json` files for the current map
 from every search path, and runs one on `!ht <n> play` - spawning, NPC
-behaviour, triggers, and damage between players and scenario NPCs. It runs on
-social-mode servers (`g_socialMode 1`) for now. rcon `ht`, `ht <n> play` and
+behaviour and triggers. It's on for any server with `g_holotable 1` - in
+[MBIIEZ](https://github.com/clone-army/mbiiez), turn on the **Holotable** plugin
+(on the server's Plugins page; it brings **Accounts** with it). Logging in is
+`!login`, and admins are the accounts ticked on MBIIEZ's Accounts page. On a
+social server only scenario NPCs and players hurt each other; elsewhere MBII's
+usual damage rules apply. rcon `ht`, `ht <n> play`, `ht restart` and
 `ht stop` do the same without logging in.
