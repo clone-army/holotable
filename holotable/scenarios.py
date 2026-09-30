@@ -188,6 +188,7 @@ def clean(data):
                 "perPlayer": int(max(0, min(8, _num(g.get("perPlayer"), 0)))), "max": int(max(1, min(32, _num(g.get("max"), 20)))),
                 "spawn": _text(g.get("spawn"), 39), "behaviour": b, "route": _text(g.get("route"), 39),
                 "engage": int(max(0, min(4096, _num(g.get("engage"), 0)))),
+                "attacks": g.get("attacks") if g.get("attacks") in ("all", "team1", "team2") else "all",
             })
     for t in lst("triggers")[:32]:
         if not isinstance(t, dict):

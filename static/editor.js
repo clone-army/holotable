@@ -558,6 +558,8 @@ function validate() {
     if (!pointIds.has(g.spawn) && !routeIds.has(g.spawn)) add('error', 'Group "' + nm + '" has nowhere to spawn - pick a point or route.', { tab: 'groups' });
     if (g.behaviour === 'route' && !routeIds.has(g.route)) add('warn', 'Group "' + nm + '" walks a route but none is picked - it will just hunt.', { tab: 'groups' });
     if (!spawned.has(g.id)) add('warn', 'Group "' + nm + '" is never spawned by a trigger.', { tab: 'triggers' });
+    if (s.joinTeam && s.joinTeam !== 'any' && g.attacks && g.attacks !== 'all' && g.attacks !== s.joinTeam)
+      add('warn', 'Group "' + nm + '" only attacks ' + S.teams[g.attacks] + ', but players can only join ' + S.teams[s.joinTeam] + ' - so they\'re allies, not enemies.', { tab: 'groups' });
     [...g.npcs, g.leader].filter(Boolean).forEach((n) => { if (!knownNpc(n)) add('warn', 'Group "' + nm + '": NPC type "' + n + '" isn\'t one the server has.', { tab: 'groups' }); });
   }
   for (const t of s.triggers) {
@@ -989,6 +991,13 @@ function renderGroups(el) {
       h('div', { class: 'grid3' }, field('How many', numIn(g, 'count', { min: 0, max: 32 })), field('+ per player', numIn(g, 'perPlayer', { min: 0, max: 8 })), field('At most', numIn(g, 'max', { min: 1, max: 32 }))),
       field('Spawn at', selectIn(g, 'spawn', spawnOpts)),
       field('Behaviour', selectIn(g, 'behaviour', BEHAVIOURS)),
+      field('Attacks', selectIn(g, 'attacks', [
+        { v: 'all', t: 'Everyone (hostile to all)' },
+        { v: 'team1', t: 'Only ' + S.teams.team1 + ' - they fight for ' + S.teams.team2 },
+        { v: 'team2', t: 'Only ' + S.teams.team2 + ' - they fight for ' + S.teams.team1 },
+      ]), g.attacks && g.attacks !== 'all'
+        ? 'Players on the other side (and NPCs fighting for it) are left alone - groups on opposite sides fight each other.'
+        : 'Pick a side to make them allies of the other one.'),
       g.behaviour === 'route' ? field('Route to walk', selectIn(g, 'route', [{ v: '', t: '- pick -' }].concat(s.routes.map((r) => ({ v: r.id, t: r.name }))))) : null,
       (g.behaviour === 'route' || g.behaviour === 'guard') ? field('Engage range', numIn(g, 'engage', { min: 0, max: 4096, placeholder: g.behaviour === 'guard' ? '600' : '350' }), 'How close a player comes before they go for them (0 = default).') : null,
       h('div', { class: 'row-end' }, h('button', { class: 'btn small danger', onclick: () => { s.groups.splice(i, 1); changed(); } }, 'Delete group')),
@@ -996,7 +1005,7 @@ function renderGroups(el) {
     el.append(card);
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
-    s.groups.push({ id: uid('g'), name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: s.points[0] ? s.points[0].id : '', behaviour: 'hunt', route: '', engage: 0 });
+    s.groups.push({ id: uid('g'), name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: s.points[0] ? s.points[0].id : '', behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
     changed();
   } }, '+ New group'));
 }
@@ -1238,7 +1247,7 @@ function normalise(s) {
   if (!s.joinTeam) s.joinTeam = 'any';
   if (!s.respawnSeconds) s.respawnSeconds = 5;
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });
-  s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; });
+  s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; if (!g.attacks) g.attacks = 'all'; });
   s.triggers.forEach((t) => { if (!Array.isArray(t.actions)) t.actions = []; });
   return s;
 }

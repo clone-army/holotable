@@ -26,9 +26,10 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   a map loads, so **new or changed types work after the server's next map
   change**. Groups can also use any NPC type the game already has.
 - **Groups.** Which NPC types, how many (scaling with players if you like), a
-  leader, where they spawn (a point, or along a route) and how they behave:
+  leader, where they spawn (a point, or along a route), how they behave -
   *hunt*, *route* (walk a route, fight whoever comes close), *guard* (hold the
-  spawn) or *idle*.
+  spawn) or *idle* - and who they attack: everyone, or one side only (they
+  fight for the other - allies for the players on it).
 - **Triggers.** When: the start, a timer, a player entering an area, a group
   wiped out, everyone down, or some seconds after another trigger. Then: spawn
   a group, an NPC says something (a chat line under their name, with a voice
@@ -118,6 +119,9 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 - `at` is a point or area id, or `player` (where the player who set it off is).
   Effects are named as the game names them (`Grenades/EXP_BaseThermal`, no
   `effects/` or `.efx`).
+- `attacks`: `all` (hostile to everyone), or `team1` / `team2` - only that
+  side; the group fights for the other one, leaves its players alone, and
+  fights groups on the opposite side.
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `engage` is how close a
   player comes before a route walker or guard goes for them.
 - Coordinates are the game's own (as `/viewpos` shows); `z` is the floor.
