@@ -40,7 +40,13 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   time and respawn a few seconds after dying, while the scenario runs.
 - **Checks.** What's missing or likely to go wrong, before you try it.
 - **Accounts.** The first admin comes from `.env`; admins add more on the Users
-  page. For now anyone logged in can edit any scenario.
+  page. Each scenario belongs to whoever made it: editors see and edit only
+their own, admins see all of them (and can hand one to someone else). In game,
+every scenario for the map is listed. An account can be linked
+  to its owner's in-game account and ticked **Runs scenarios**: then they can
+  `!ht play`, `!ht restart` and `!ht stop` in game without being a game admin
+  (the handles go in `GAMEDATA/holotable_runners.dat`, which servers re-read
+  every few seconds).
 
 ## Install
 

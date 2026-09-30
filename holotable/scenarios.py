@@ -1,6 +1,7 @@
 """Scenario files: <id>.json in the scenario folder (the game folder's
-holotable/, where the engine finds them). Anyone logged in can edit any of
-them, for now."""
+holotable/, where the engine finds them). Each has an owner - whoever made
+it (older ones: createdBy) - who, with admins, is the only one who sees it
+in Holotable. In game every scenario for the map is listed."""
 import json
 import os
 import re
@@ -45,6 +46,7 @@ def blank(name, mapname, author):
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
         "created": int(time.time()), "createdBy": author,
         "updated": int(time.time()), "updatedBy": author,
+        "owner": author,
     }
 
 
@@ -66,9 +68,26 @@ def listing():
         out.append({
             "id": sid, "name": s.get("name", sid), "map": s.get("map", ""), "description": s.get("description", ""),
             "updated": s.get("updated", 0), "updatedBy": s.get("updatedBy", ""),
+            "owner": owner_of(s),
             "groups": len(s.get("groups", []) or []), "triggers": len(s.get("triggers", []) or []),
         })
     return out
+
+
+def owner_of(data):
+    return (data or {}).get("owner") or (data or {}).get("createdBy") or ""
+
+
+def can_see(data, user):
+    """Admins see every scenario; editors their own."""
+    return user["role"] == "admin" or owner_of(data).lower() == user["username"].lower()
+
+
+def set_owner(sid, owner):
+    with _lock:
+        data = load(sid)
+        data["owner"] = owner
+        _write(sid, data)
 
 
 def load(sid):
@@ -103,7 +122,7 @@ def duplicate(sid, author):
     data = load(sid)
     data["name"] = "{} (copy)".format(data.get("name", sid))
     data["created"] = data["updated"] = int(time.time())
-    data["createdBy"] = data["updatedBy"] = author
+    data["createdBy"] = data["updatedBy"] = data["owner"] = author
     suffix = secrets.token_hex(2).upper()
     renamed = {}
     for n in data.get("npcTypes", []) or []:
@@ -345,6 +364,7 @@ def save(sid, data, author):
             old = {}
         cleaned["created"] = old.get("created", int(time.time()))
         cleaned["createdBy"] = old.get("createdBy", author)
+        cleaned["owner"] = owner_of(old) or author
         cleaned["updated"] = int(time.time())
         cleaned["updatedBy"] = author
         # NPC type names are shared by every scenario on the server.

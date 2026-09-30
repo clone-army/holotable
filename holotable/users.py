@@ -3,6 +3,11 @@
 The first time it runs with no accounts, it makes one from HT_ADMIN_USER /
 HT_ADMIN_PASSWORD in .env. Roles: "admin" (can manage accounts) and
 "editor" (can build scenarios).
+
+An account can also be linked to its owner's in-game account (the handle
+they !login with) and allowed to run scenarios in game (!ht play, restart,
+stop) without being a game admin: those handles are kept in
+GAMEDATA/holotable_runners.dat, which the servers re-read every few seconds.
 """
 import json
 import os
@@ -68,7 +73,62 @@ def role_of(username):
 
 
 def listing():
-    return [{"username": u.get("username", ""), "role": u.get("role", "editor")} for u in _load()]
+    return [{"username": u.get("username", ""), "role": u.get("role", "editor"),
+             "handle": u.get("handle", ""), "can_run": bool(u.get("can_run"))} for u in _load()]
+
+
+RUNNERS_FILE = "holotable_runners.dat"
+
+
+def game_handles():
+    """Every in-game account handle (from the shared accounts file)."""
+    out = []
+    try:
+        with open(os.path.join(config.GAMEDATA, "economy_accounts.dat"), "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) == 6:
+                    out.append(parts[0])
+    except FileNotFoundError:
+        pass
+    return sorted(out, key=str.lower)
+
+
+def _write_runners(users):
+    handles = sorted({u["handle"] for u in users if u.get("can_run") and u.get("handle")}, key=str.lower)
+    path = os.path.join(config.GAMEDATA, RUNNERS_FILE)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("".join(h + "\n" for h in handles))
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
+def set_game_link(username, handle=None, can_run=None):
+    """Links an account to an in-game handle and/or lets it run scenarios."""
+    with _lock:
+        users = _load()
+        target = next((u for u in users if u.get("username", "").lower() == str(username).lower()), None)
+        if not target:
+            return False, "No such user."
+        if handle is not None:
+            handle = str(handle).strip()
+            if handle and (len(handle) > 23 or not all(c.isalnum() or c == "_" for c in handle)):
+                return False, "In-game handles are up to 23 letters, numbers or _."
+            known = {h.lower(): h for h in game_handles()}
+            if handle and handle.lower() not in known:
+                return False, "There's no in-game account called '{}' - they need to !register it first.".format(handle)
+            if handle and any(u is not target and u.get("handle", "").lower() == handle.lower() for u in users):
+                return False, "Another Holotable account is already linked to {}.".format(handle)
+            target["handle"] = known.get(handle.lower(), handle) if handle else ""
+        if can_run is not None:
+            target["can_run"] = bool(can_run)
+        _save(users)
+        _write_runners(users)
+    msg = "Saved."
+    if target.get("can_run") and not target.get("handle"):
+        msg = "Saved - link their in-game account too, or they can't run scenarios in game."
+    return True, msg
 
 
 def _valid_name(name):
@@ -130,4 +190,5 @@ def delete(username):
             return False, "There has to be at least one admin."
         users.remove(target)
         _save(users)
+        _write_runners(users)
     return True, "Deleted {}.".format(username)

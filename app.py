@@ -105,15 +105,26 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html", scenarios=scenarios.listing(), maps=gamedata.list_maps())
+    me = current_user()
+    visible = [s for s in scenarios.listing() if me["role"] == "admin" or s["owner"].lower() == me["username"].lower()]
+    return render_template("index.html", scenarios=visible, maps=gamedata.list_maps(),
+                           usernames=[u["username"] for u in users.listing()])
+
+
+def own_scenario(sid):
+    """The scenario, if it exists and the user may see it (else None - an
+    editor gets "no such scenario" for anyone else's, as if it isn't there)."""
+    try:
+        data = scenarios.load(sid)
+    except (FileNotFoundError, ValueError):
+        return None
+    return data if scenarios.can_see(data, current_user()) else None
 
 
 @app.route("/edit/<sid>")
 @login_required
 def edit(sid):
-    try:
-        scenarios.load(sid)
-    except (FileNotFoundError, ValueError):
+    if own_scenario(sid) is None:
         abort(404)
     return render_template("editor.html", sid=sid)
 
@@ -123,7 +134,7 @@ def edit(sid):
 def users_page():
     if current_user()["role"] != "admin":
         abort(403)
-    return render_template("users.html", users=users.listing())
+    return render_template("users.html", users=users.listing(), handles=users.game_handles())
 
 
 @app.route("/health")
@@ -215,10 +226,10 @@ def api_sound():
 @app.route("/api/scenarios/<sid>")
 @login_required
 def api_scenario(sid):
-    try:
-        return ok(scenario=scenarios.load(sid))
-    except (FileNotFoundError, ValueError):
+    data = own_scenario(sid)
+    if data is None:
         return fail("No such scenario.", 404)
+    return ok(scenario=data)
 
 
 @app.route("/api/scenarios", methods=["POST"])
@@ -238,9 +249,7 @@ def api_create():
 @app.route("/api/scenarios/<sid>", methods=["POST"])
 @login_required
 def api_save(sid):
-    try:
-        scenarios.load(sid)
-    except (FileNotFoundError, ValueError):
+    if own_scenario(sid) is None:
         return fail("No such scenario.", 404)
     try:
         saved = scenarios.save(sid, request.get_json(silent=True), current_user()["username"])
@@ -252,6 +261,8 @@ def api_save(sid):
 @app.route("/api/scenarios/<sid>/duplicate", methods=["POST"])
 @login_required
 def api_duplicate(sid):
+    if own_scenario(sid) is None:
+        return fail("No such scenario.", 404)
     try:
         return ok(id=scenarios.duplicate(sid, current_user()["username"]))
     except (FileNotFoundError, ValueError):
@@ -261,11 +272,26 @@ def api_duplicate(sid):
 @app.route("/api/scenarios/<sid>/delete", methods=["POST"])
 @login_required
 def api_delete(sid):
+    if own_scenario(sid) is None:
+        return fail("No such scenario.", 404)
     try:
         scenarios.delete(sid)
     except (FileNotFoundError, ValueError):
         return fail("No such scenario.", 404)
     return ok()
+
+
+@app.route("/api/scenarios/<sid>/owner", methods=["POST"])
+@admin_required
+def api_owner(sid):
+    owner = str((request.get_json(silent=True) or {}).get("owner", "")).strip()
+    if not users.role_of(owner):
+        return fail("No such user.")
+    try:
+        scenarios.set_owner(sid, next(u["username"] for u in users.listing() if u["username"].lower() == owner.lower()))
+    except (FileNotFoundError, ValueError):
+        return fail("No such scenario.", 404)
+    return ok(message="Now {}'s.".format(owner))
 
 
 # --- API: accounts ------------------------------------------------------------
@@ -295,6 +321,15 @@ def api_user_password():
 def api_user_role():
     d = request.get_json(silent=True) or {}
     success, msg = users.set_role(d.get("username"), d.get("role"))
+    return ok(message=msg) if success else fail(msg)
+
+
+@app.route("/api/users/game", methods=["POST"])
+@admin_required
+def api_user_game():
+    d = request.get_json(silent=True) or {}
+    success, msg = users.set_game_link(d.get("username"), d.get("handle"),
+                                       d.get("can_run") if "can_run" in d else None)
     return ok(message=msg) if success else fail(msg)
 
 

@@ -2,7 +2,8 @@
 {% block title %}Users - Holotable{% endblock %}
 {% block content %}
 <main class="page">
-  <div class="page-head"><div><h1>Users</h1><p class="muted">Editors build scenarios (any scenario, for now). Admins also manage accounts.</p></div></div>
+  <div class="page-head"><div><h1>Users</h1><p class="muted">Editors build scenarios (any scenario, for now). Admins also manage accounts.
+    <b>Runs scenarios</b> lets someone <code>!ht play</code>, <code>!ht restart</code> and <code>!ht stop</code> in game while logged in to their linked in-game account - without being a game admin (game admins always can).</p></div></div>
   <section class="card">
     <h2>Add a user</h2>
     <form id="add-form" class="row-form">
@@ -15,7 +16,7 @@
   <section class="card">
     <h2>Accounts <span class="badge">{{ users|length }}</span></h2>
     <table class="table">
-      <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
+      <thead><tr><th>Username</th><th>Role</th><th>In-game account</th><th>Runs scenarios</th><th></th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
@@ -26,6 +27,13 @@
               <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
             </select>
           </td>
+          <td>
+            <div class="input-row">
+              <input list="handle-list" value="{{ u.handle }}" placeholder="their !login handle" data-handle-for="{{ u.username }}" style="max-width: 190px">
+              <button class="btn small" data-handle-save="{{ u.username }}">Save</button>
+            </div>
+          </td>
+          <td><label class="check"><input type="checkbox" data-run="{{ u.username }}" {% if u.can_run %}checked{% endif %}> can run</label></td>
           <td class="actions">
             <button class="btn small" data-pass="{{ u.username }}">Set password</button>
             {% if u.username|lower != user.username|lower %}<button class="btn small danger" data-del="{{ u.username }}">Delete</button>{% endif %}
@@ -36,6 +44,7 @@
     </table>
   </section>
 </main>
+<datalist id="handle-list">{% for h in handles %}<option value="{{ h }}">{% endfor %}</datalist>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -49,6 +58,16 @@ document.getElementById('add-form').addEventListener('submit', async (e) => {
 document.querySelectorAll('[data-role]').forEach(s => s.addEventListener('change', async () => {
   try { const r = await api('/api/users/role', { username: s.dataset.role, role: s.value }); toast(r.message); }
   catch (err) { toast(err.message, true); location.reload(); }
+}));
+document.querySelectorAll('[data-handle-save]').forEach(b => b.addEventListener('click', async () => {
+  const name = b.dataset.handleSave;
+  const input = document.querySelector('[data-handle-for="' + CSS.escape(name) + '"]');
+  try { const r = await api('/api/users/game', { username: name, handle: input.value.trim() }); toast(r.message); }
+  catch (err) { toast(err.message, true); }
+}));
+document.querySelectorAll('[data-run]').forEach(cb => cb.addEventListener('change', async () => {
+  try { const r = await api('/api/users/game', { username: cb.dataset.run, can_run: cb.checked }); toast(r.message); }
+  catch (err) { cb.checked = !cb.checked; toast(err.message, true); }
 }));
 document.querySelectorAll('[data-pass]').forEach(b => b.addEventListener('click', async () => {
   const p = prompt('New password for ' + b.dataset.pass + ' (8+ characters):');

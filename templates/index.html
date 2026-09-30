@@ -4,7 +4,7 @@
   <div class="page-head">
     <div>
       <h1>Scenarios</h1>
-      <p class="muted">Saved into the game folder, where servers find them. In game, log in and type <code>!ht</code> on a map to list its scenarios, then <code>!ht &lt;n&gt; play</code> (admins).</p>
+      <p class="muted">{% if user.role != 'admin' %}Only you (and admins) see your scenarios here. {% endif %}Saved into the game folder, where servers find them. In game, log in and type <code>!ht</code> on a map to list its scenarios, then <code>!ht &lt;n&gt; play</code> (game admins, and accounts ticked to run scenarios on the Users page).</p>
     </div>
   </div>
 
@@ -22,17 +22,25 @@
 
   <section class="card">
     <div class="card-head">
-      <h2>All scenarios <span class="badge">{{ scenarios|length }}</span></h2>
+      <h2>{% if user.role == 'admin' %}All scenarios{% else %}Your scenarios{% endif %} <span class="badge">{{ scenarios|length }}</span></h2>
       <input id="search" type="search" placeholder="Search name or map">
     </div>
     {% if scenarios %}
     <table class="table">
-      <thead><tr><th>Name</th><th>Map</th><th>Groups</th><th>Triggers</th><th>Last edited</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Map</th>{% if user.role == 'admin' %}<th>Owner</th>{% endif %}<th>Groups</th><th>Triggers</th><th>Last edited</th><th></th></tr></thead>
       <tbody id="rows">
         {% for s in scenarios|sort(attribute='updated', reverse=True) %}
         <tr data-search="{{ (s.name ~ ' ' ~ s.map)|lower }}">
           <td><a href="/edit/{{ s.id }}">{{ s.name }}</a>{% if s.description %}<div class="muted small">{{ s.description }}</div>{% endif %}</td>
           <td><code>{{ s.map }}</code></td>
+          {% if user.role == 'admin' %}
+          <td>
+            <select data-owner="{{ s.id }}" title="Who can see and edit it (besides admins)">
+              {% for u in usernames %}<option value="{{ u }}" {% if u|lower == s.owner|lower %}selected{% endif %}>{{ u }}</option>{% endfor %}
+              {% if s.owner and s.owner|lower not in usernames|map('lower')|list %}<option value="" selected>{{ s.owner }} (gone)</option>{% endif %}
+            </select>
+          </td>
+          {% endif %}
           <td>{{ s.groups }}</td>
           <td>{{ s.triggers }}</td>
           <td class="small muted" data-time="{{ s.updated }}">{{ s.updatedBy }}</td>
@@ -67,6 +75,11 @@ document.querySelectorAll('[data-dup]').forEach(b => b.addEventListener('click',
 document.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
   if (!confirm('Delete "' + b.dataset.name + '"? Servers will stop seeing it.')) return;
   try { await api('/api/scenarios/' + b.dataset.del + '/delete', {}); location.reload(); }
+  catch (err) { toast(err.message, true); }
+}));
+document.querySelectorAll('[data-owner]').forEach(sel => sel.addEventListener('change', async () => {
+  if (!sel.value) return;
+  try { const r = await api('/api/scenarios/' + sel.dataset.owner + '/owner', { owner: sel.value }); toast(r.message); }
   catch (err) { toast(err.message, true); }
 }));
 document.querySelectorAll('[data-time]').forEach(td => {
