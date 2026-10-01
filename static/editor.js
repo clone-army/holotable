@@ -939,15 +939,17 @@ function modelSkins(model) {
 
 // --- Folding cards (NPC types, groups, triggers) ------------------------------
 //
-// A folded card is just its title row and a one-line summary. Which are
-// folded is kept per scenario in this browser.
-let FOLDED = new Set();
+// A folded card is just its title row and a one-line summary. They start
+// folded; which have been opened is kept per scenario in this browser (new
+// and cloned ones open, to be filled in).
+let OPEN = new Set();
 function loadFolded() {
-  try { FOLDED = new Set(JSON.parse(localStorage.getItem('ht-fold-' + SCENARIO_ID) || '[]')); } catch (e) { FOLDED = new Set(); }
+  try { OPEN = new Set(JSON.parse(localStorage.getItem('ht-open-' + SCENARIO_ID) || '[]')); } catch (e) { OPEN = new Set(); }
 }
 function saveFolded() {
-  try { localStorage.setItem('ht-fold-' + SCENARIO_ID, JSON.stringify([...FOLDED])); } catch (e) { /* private mode */ }
+  try { localStorage.setItem('ht-open-' + SCENARIO_ID, JSON.stringify([...OPEN])); } catch (e) { /* private mode */ }
 }
+function openCard(id) { OPEN.add(id); saveFolded(); }
 
 function foldable(card, id, summary) {
   const title = card.firstChild;
@@ -958,13 +960,13 @@ function foldable(card, id, summary) {
   const btn = h('button', { class: 'fold-btn', type: 'button', title: 'Fold / unfold' });
   title.prepend(btn);
   const apply = () => {
-    const folded = FOLDED.has(id);
+    const folded = !OPEN.has(id);
     card.classList.toggle('folded', folded);
     body.hidden = folded;
     sum.hidden = !folded;
     btn.textContent = folded ? '\u25B8' : '\u25BE';
   };
-  const toggle = () => { if (FOLDED.has(id)) FOLDED.delete(id); else FOLDED.add(id); saveFolded(); apply(); };
+  const toggle = () => { if (OPEN.has(id)) OPEN.delete(id); else OPEN.add(id); saveFolded(); apply(); };
   btn.addEventListener('click', toggle);
   sum.addEventListener('click', toggle);
   apply();
@@ -972,7 +974,7 @@ function foldable(card, id, summary) {
 }
 
 function foldBar(ids, what) {
-  const set = (fold) => { ids.forEach((id) => (fold ? FOLDED.add(id) : FOLDED.delete(id))); saveFolded(); renderPanels(); };
+  const set = (fold) => { ids.forEach((id) => (fold ? OPEN.delete(id) : OPEN.add(id))); saveFolded(); renderPanels(); };
   return h('div', { class: 'fold-bar' },
     h('button', { class: 'btn tiny', type: 'button', onclick: () => set(true) }, 'Fold all ' + what),
     h('button', { class: 'btn tiny', type: 'button', onclick: () => set(false) }, 'Unfold all'));
@@ -1036,9 +1038,10 @@ function renderNpcs(el) {
       const old = n.name;
       let v = e.target.value.replace(/[^A-Za-z0-9_]/g, '');
       n.name = v;
+      if (OPEN.has('npc:' + old)) { OPEN.delete('npc:' + old); openCard('npc:' + v); }
       s.groups.forEach((g) => { g.npcs = g.npcs.map((x) => x === old ? v : x); if (g.leader === old) g.leader = v; });
       soft();
-    }, onchange: (e) => { if (!/^HT_/i.test(n.name)) { n.name = 'HT_' + n.name; e.target.value = n.name; soft(); } } });
+    }, onchange: (e) => { if (!/^HT_/i.test(n.name)) { const was = n.name; n.name = 'HT_' + n.name; e.target.value = n.name; if (OPEN.has('npc:' + was)) { OPEN.delete('npc:' + was); openCard('npc:' + n.name); } soft(); } } });
     card.append(
       h('div', { class: 'card-title' }, h('span', { class: 'tag' }, 'npc'), h('b', { class: 'grow' }, n.name || 'unnamed')),
       h('div', { class: 'npc-head' }, icon, h('div', { class: 'grow' }, field('Type name', nameIn, 'Starts with HT_. Used in groups.'))),
@@ -1054,7 +1057,9 @@ function renderNpcs(el) {
     fillSkins();
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
-    s.npcTypes.push({ name: 'HT_' + (S.scn.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 12) || 'Npc') + (s.npcTypes.length + 1), model: 'stormtrooper', skin: 'default', weapon: 'WP_BLASTER', altFire: false, health: 100, armor: 0, scale: 100, skill: 3, runSpeed: 210 });
+    const npcName = 'HT_' + (S.scn.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 12) || 'Npc') + (s.npcTypes.length + 1);
+    openCard('npc:' + npcName);
+    s.npcTypes.push({ name: npcName, model: 'stormtrooper', skin: 'default', weapon: 'WP_BLASTER', altFire: false, health: 100, armor: 0, scale: 100, skill: 3, runSpeed: 210 });
     changed();
   } }, '+ New NPC type'));
 }
@@ -1112,6 +1117,7 @@ function renderGroups(el) {
           while (s.groups.some((x) => x.name === name)) name = (g.name || 'Group') + ' copy ' + n++;
           copy.name = name;
           s.groups.splice(i + 1, 0, copy);
+          openCard(copy.id);
           changed();
           toast('Cloned - "' + name + '" is below. Triggers still spawn the original; add a Spawn action for the copy.');
         } }, 'Clone group'),
@@ -1120,7 +1126,9 @@ function renderGroups(el) {
     el.append(foldable(card, g.id, groupSummary(g)));
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
-    s.groups.push({ id: uid('g'), name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
+    const gid = uid('g');
+    openCard(gid);
+    s.groups.push({ id: gid, name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
     changed();
   } }, '+ New group'));
 }
@@ -1510,7 +1518,9 @@ function renderTriggers(el) {
     el.append(foldable(card, t.id, triggerSummary(t)));
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
-    s.triggers.push({ id: uid('t'), name: nextName(s.triggers, 'Trigger'), when: s.triggers.length ? 'all_dead' : 'start', area: '', group: '', trigger: '', seconds: 0,
+    const tid = uid('t');
+    openCard(tid);
+    s.triggers.push({ id: tid, name: nextName(s.triggers, 'Trigger'), when: s.triggers.length ? 'all_dead' : 'start', area: '', group: '', trigger: '', seconds: 0,
       count: 0, repeat: false, cooldown: 5,
       actions: [s.groups[0] ? { do: 'spawn', group: s.groups[0].id, at: s.points[0] ? s.points[0].id : '' } : { do: 'center', text: '' }] });
     changed();
