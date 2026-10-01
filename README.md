@@ -121,6 +121,8 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   - `teleport` (`at`, `who` `player` or `all`)
   - `use` (`target`) - sets off the map's own entities with that targetname,
     as a button would: doors, lifts, relays
+  - `win` (`team`: `team1`, `team2` or `draw`, optional `text`) - ends the
+    scenario, then the round, as if that side had won it
   - `music` (`path`), `end` (optional `text`)
 - `at` is a point or area id, or `player` (where the player who set it off is).
   Effects are named as the game names them (`Grenades/EXP_BaseThermal`, no

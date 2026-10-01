@@ -20,7 +20,7 @@ BEHAVIOURS = ("hunt", "route", "guard", "idle")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
          "player_died", "npc_killed", "after")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
-           "teleport", "use", "despawn", "end")
+           "teleport", "use", "despawn", "win", "end")
 _NPC_NAME = re.compile(r"^HT_[A-Za-z0-9_]{1,40}$")
 
 
@@ -249,6 +249,9 @@ def clean(data):
                 act["who"] = "all" if a.get("who") == "all" else "player"
             elif d == "use":
                 act["target"] = _text(a.get("target"), 63)
+            elif d == "win":
+                act["team"] = a.get("team") if a.get("team") in ("team1", "team2", "draw") else "team1"
+                act["text"] = _text(a.get("text"), 190)
             else:
                 act["text"] = _text(a.get("text"), 190)
             acts.append(act)

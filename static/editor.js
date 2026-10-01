@@ -596,8 +596,8 @@ function validate() {
       if (a.do === 'say' && !a.text && !a.path) add('warn', 'Trigger "' + nm + '": a Say action is empty.', { tab: 'triggers' });
     });
   }
-  if (s.triggers.length && !s.triggers.some((t) => t.actions.some((a) => a.do === 'end')))
-    add('info', 'Nothing ends it, so it runs until its time limit - e.g. add When: everyone\'s down - End.', { tab: 'triggers' });
+  if (s.triggers.length && !s.triggers.some((t) => t.actions.some((a) => a.do === 'end' || a.do === 'win')))
+    add('info', 'Nothing ends it, so it runs until its time limit - e.g. add When: everyone\'s down - End (or Win the round).', { tab: 'triggers' });
   for (const r of s.routes) {
     if (r.points.length < 2) add('warn', 'Route "' + r.name + '" has fewer than 2 points.', { kind: 'route', id: r.id });
     if (S.crossings[r.id]) add('warn', 'Route "' + r.name + '" goes through a wall (red) - NPCs may get stuck. Add a point to go round it.', { kind: 'route', id: r.id });
@@ -1055,6 +1055,7 @@ const ACTION_TYPES = [
   { v: 'music', t: 'Change the music' },
   { v: 'teleport', t: 'Teleport players' },
   { v: 'use', t: 'Use a map entity (door, lift, button...)' },
+  { v: 'win', t: 'Win the round for a side (ends the scenario)' },
   { v: 'end', t: 'End the scenario' },
 ];
 const whenHasPlayer = (t) => !!(WHENS.find((w) => w.v === t.when) || {}).player;
@@ -1143,6 +1144,7 @@ function actionRow(t, a, i) {
     if (a.do === 'shake') Object.assign(a, { intensity: 4, seconds: 1, at: '' });
     if (a.do === 'tell') a.style = 'center';
     if (a.do === 'teleport') a.who = whenHasPlayer(t) ? 'player' : 'all';
+    if (a.do === 'win') a.team = (S.scn.joinTeam && S.scn.joinTeam !== 'any') ? S.scn.joinTeam : 'team1';
     changed();
   } }, ACTION_TYPES.map((o) => h('option', { value: o.v, selected: o.v === a.do }, o.t)));
   row.append(h('div', { class: 'input-row' }, kind,
@@ -1189,6 +1191,14 @@ function actionRow(t, a, i) {
         : [{ v: 'all', t: 'Every player' }]));
       if (!whenHasPlayer(t) && a.who !== 'all') { a.who = 'all'; }
       row.append(selectIn(a, 'at', [{ v: '', t: '- to where -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name + ' (facing its way)' })), s.areas.map((q) => ({ v: q.id, t: 'Area: ' + q.name + ' (middle)' })))));
+      break;
+    case 'win':
+      row.append(selectIn(a, 'team', [
+        { v: 'team1', t: S.teams.team1 + ' win' },
+        { v: 'team2', t: S.teams.team2 + ' win' },
+        { v: 'draw', t: 'A draw' },
+      ]), textIn(a, 'text', { maxlength: 190, placeholder: 'Big message as it ends (optional)' }),
+      h('small', { class: 'muted' }, 'Ends the scenario, then the round - scores, round-over message and the next round, as if they\'d won it themselves.'));
       break;
     case 'use': {
       const box = h('div', {});
