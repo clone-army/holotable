@@ -206,6 +206,12 @@ def api_map_shaders(name):
         return fail("Couldn't read that map: {}".format(e), 500)
 
 
+@app.route("/api/maps/<name>/classes")
+@login_required
+def api_map_classes(name):
+    return ok(classes=gamedata.map_classes(name))
+
+
 @app.route("/api/maps/<name>/objectives")
 @login_required
 def api_map_objectives(name):

@@ -565,6 +565,15 @@ function validate() {
   const startsSpawned = s.groups.some((g) => g.spawnAtStart);
   if (!s.triggers.length && !startsSpawned) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, or add a trigger.', { tab: 'triggers' });
   else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer or a player entering an area (or a group that spawns at the start).', { tab: 'triggers' });
+  if (s.limitClasses) {
+    const c = ((LISTS.cls || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
+    const sides = s.joinTeam && s.joinTeam !== 'any' ? [s.joinTeam] : ['team1', 'team2'];
+    for (const tm of sides) {
+      if (c && classIds(c, tm).length && !classIds(c, tm).some((id) => (s.classes || []).includes(id)))
+        add('error', 'No ' + S.teams[tm] + ' class is ticked - nobody could play that side.', { tab: 'scenario' });
+    }
+    if (!(s.classes || []).length) add('error', 'Classes are limited but none is ticked.', { tab: 'scenario' });
+  }
   const spawned = new Set();
   s.triggers.forEach((t) => t.actions.forEach((a) => { if (a.do === 'spawn') spawned.add(a.group); }));
   for (const g of s.groups) {
@@ -778,6 +787,15 @@ function renderScenario(el) {
     h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!s.anytimeSpawn, onchange: (e) => { s.anytimeSpawn = e.target.checked; changed(); } }),
       h('span', {}, 'Anytime spawn - join any time, and respawn after dying')),
     ...(s.anytimeSpawn ? [field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 }))] : []),
+    h('h3', {}, 'Classes'),
+    h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!s.limitClasses, onchange: (e) => {
+      s.limitClasses = e.target.checked;
+      if (s.limitClasses && !(s.classes || []).length) {
+        // Start from every class, to untick the ones not wanted.
+        loadList('cls', '/api/maps/' + encodeURIComponent(s.map) + '/classes', 'classes').then((c) => { s.classes = classIds(c[s.classMode || 'map']); changed(); });
+      } else changed();
+    } }), h('span', {}, 'Limit the classes players can pick')),
+    ...(s.limitClasses ? [classPicker(s)] : []),
     h('div', { class: 'info' },
       h('b', {}, 'Playing it: '), 'on any server running the Holotable plugin, change to ', h('code', {}, s.map),
       ', log in (', h('code', {}, '!login'), ') and type ', h('code', {}, '!ht'), ' to list the map\'s scenarios. ',
@@ -788,6 +806,48 @@ function renderScenario(el) {
       stat(s.npcTypes.length, 'NPC types'), stat(s.groups.length, 'groups'), stat(s.triggers.length, 'triggers')),
     h('p', {}, h('a', { href: '/api/scenarios/' + SCENARIO_ID, target: '_blank' }, 'View the saved JSON')),
   );
+}
+
+// Every class (and subclass) id in a map's /classes answer, by side.
+function classIds(c, team) {
+  c = c || {};
+  return ['team1', 'team2'].filter((tm) => !team || tm === team)
+    .flatMap((tm) => ((c[tm] || {}).classes || []).flatMap((k) => [k.id].concat(k.sub.map((x) => x.id))));
+}
+
+function classPicker(s) {
+  const box = h('div', { class: 'class-list' }, h('small', { class: 'muted' }, 'Loading this map\'s classes...'));
+  loadList('cls', '/api/maps/' + encodeURIComponent(s.map) + '/classes', 'classes').then((c) => {
+    c = c || {};
+    box.innerHTML = '';
+    s.classes = s.classes || [];
+    const mode = s.classMode === 'legends' ? 'legends' : 'map';
+    box.append(field('Server mode', selectIn(s, 'classMode', [
+      { v: 'map', t: 'Open / Semi-Authentic - this map\'s own classes' },
+      { v: 'legends', t: 'Legends - the Legends roster' },
+    ], () => { if (!s.classes.some((id) => classIds(c[s.classMode]).includes(id))) s.classes = classIds(c[s.classMode]); changed(); }),
+      'Pick the mode the server runs - the classes differ.'));
+    c = c[mode] || {};
+    const tick = (id, name, sub) => h('label', { class: 'check-row' + (sub ? ' indent' : '') },
+      h('input', { type: 'checkbox', checked: s.classes.includes(id), onchange: (e) => {
+        s.classes = s.classes.filter((x) => x !== id).concat(e.target.checked ? [id] : []); changed();
+      } }), h('span', {}, name, ' ', h('small', { class: 'muted' }, id)));
+    for (const tm of ['team1', 'team2']) {
+      if (s.joinTeam && s.joinTeam !== 'any' && s.joinTeam !== tm) continue;
+      const side = c[tm] || { classes: [] };
+      const all = classIds(c, tm);
+      box.append(h('div', { class: 'row-end' }, h('b', { class: 'grow' }, S.teams[tm]),
+        h('button', { class: 'btn small', onclick: () => { s.classes = s.classes.filter((x) => !all.includes(x)).concat(all); changed(); } }, 'All'),
+        h('button', { class: 'btn small', onclick: () => { s.classes = s.classes.filter((x) => !all.includes(x)); changed(); } }, 'None')));
+      if (!side.classes.length) box.append(h('small', { class: 'muted' }, 'No classes found for this side.'));
+      for (const k of side.classes) {
+        box.append(tick(k.id, k.name + (k.kind ? ' (' + k.kind + ')' : ''), false));
+        k.sub.forEach((x) => box.append(tick(x.id, x.name, true)));
+      }
+    }
+    box.append(h('small', { class: 'muted' }, 'Anyone on another class is told to pick again. ' + (mode === 'legends' ? 'Legends classes are the same on every map.' : 'From this map\'s own team setups.') + ' Not in Full Authentic mode, where players build their own classes.'));
+  });
+  return box;
 }
 
 function stat(n, t) { return h('div', { class: 'stat' }, h('b', {}, String(n)), h('span', {}, t)); }
@@ -1048,6 +1108,7 @@ function renderNpcs(el) {
       h('div', { class: 'grid2' }, field('Model', modelIn), field('Skin', skinSel)),
       h('div', { class: 'grid2' }, field('Weapon', selectIn(n, 'weapon', S.weapons.map((w) => ({ v: w, t: w.replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase() }))), n.weapon === 'WP_SABER' ? 'Saber NPCs are experimental.' : null),
         field('Fires', h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!n.altFire, onchange: (e) => { n.altFire = e.target.checked; soft(); } }), ' alt fire'))),
+      n.weapon === 'WP_SABER' ? field('Saber colour', selectIn(n, 'saberColor', SABER_COLORS.map((c) => ({ v: c, t: c })))) : null,
       h('div', { class: 'grid3' }, field('Health', numIn(n, 'health', { min: 1, max: 5000 })), field('Armour', numIn(n, 'armor', { min: 0, max: 1000 })), field('Size %', numIn(n, 'scale', { min: 40, max: 250 }))),
       h('div', { class: 'grid2' }, field('Skill', selectIn(n, 'skill', [1, 2, 3, 4, 5].map((k) => ({ v: k, t: ['', '1 - raw recruit', '2 - poor', '3 - average', '4 - veteran', '5 - elite'][k] })))),
         field('Run speed', numIn(n, 'runSpeed', { min: 50, max: 400 }))),
@@ -1059,7 +1120,7 @@ function renderNpcs(el) {
   el.append(h('button', { class: 'btn primary', onclick: () => {
     const npcName = 'HT_' + (S.scn.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 12) || 'Npc') + (s.npcTypes.length + 1);
     openCard('npc:' + npcName);
-    s.npcTypes.push({ name: npcName, model: 'stormtrooper', skin: 'default', weapon: 'WP_BLASTER', altFire: false, health: 100, armor: 0, scale: 100, skill: 3, runSpeed: 210 });
+    s.npcTypes.push({ name: npcName, model: 'stormtrooper', skin: 'default', weapon: 'WP_BLASTER', altFire: false, health: 100, armor: 0, scale: 100, skill: 3, runSpeed: 210, saberColor: 'blue' });
     changed();
   } }, '+ New NPC type'));
 }
@@ -1081,6 +1142,7 @@ const BEHAVIOURS = [
   { v: 'guard', t: 'Guard - hold where they spawned, fight anyone close' },
   { v: 'idle', t: 'Idle - stand about (fight only if attacked)' },
 ];
+const SABER_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
 const PACES = [{ v: 'walk', t: 'Walking' }, { v: 'run', t: 'Running' }];
 
 function renderGroups(el) {

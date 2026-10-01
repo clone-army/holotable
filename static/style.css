@@ -244,6 +244,9 @@ table.mini tr.on td { color: var(--holo); }
 
 .check-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; cursor: pointer; }
 .check-row input { width: auto; margin: 0; }
+.class-list .check-row { margin: 2px 0; }
+.class-list .check-row.indent { padding-left: 24px; }
+.class-list .row-end { margin-top: 10px; }
 
 /* Folding cards */
 .fold-btn { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px 0 0; font-size: 14px; width: 18px; flex-shrink: 0; }

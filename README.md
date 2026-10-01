@@ -21,7 +21,8 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   (trigger zones). Click to place; each lands on the floor under the cut, and
   you can drag to move. Route legs that go through a wall show red.
 - **NPC types.** Pick a model and skin (every player model in the game, with
-  its icon where there is one), weapon, health, armour, size, skill and speed.
+  its icon where there is one), weapon (and saber colour), health, armour,
+  size, skill and speed.
   They're written to `ext_data/NPCs/holotable.npc`; MBII reads NPC files when
   a map loads, so **new or changed types work after the server's next map
   change**. Groups can also use any NPC type the game already has.
@@ -149,6 +150,11 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 - `attacks`: `all` (hostile to everyone), or `team1` / `team2` - only that
   side; the group fights for the other one, leaves its players alone, and
   fights groups on the opposite side.
+- `limitClasses` + `classes`: when true, only those classes (MBII's class
+  names, e.g. `JT_Padawan`) can be played; anyone on another is sent back to
+  pick again. `classMode` is which list the editor shows: `map` (the map's
+  team setups - Open / Semi-Authentic) or `legends` (the Legends roster).
+  Not in Full Authentic mode, where players build their own classes.
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `routePace` is `walk`
   (default) or `run`. `engage` is how close a player comes before a route
   walker or guard goes for them.

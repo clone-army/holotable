@@ -545,39 +545,168 @@ def map_shaders(mapname):
     return sorted(out, key=str.lower)
 
 
-def map_objectives(mapname):
-    """{"team1": [{"n": 1, "name": ...}], "team2": [...]} from maps/<map>.siege."""
+def _siege_text(mapname):
+    """maps/<map>.siege without its comments, or ""."""
     with _lock:
         _refresh()
         hit = _index.get("sieges", {}).get(str(mapname or "").lower())
-    out = {"team1": [], "team2": []}
     if not hit:
-        return out
+        return ""
     try:
         with zipfile.ZipFile(hit[0]) as z:
             text = z.read(hit[1]).decode("latin1")
     except (zipfile.BadZipFile, OSError, KeyError):
-        return out
-    text = re.sub(r"//[^\n]*", "", text)
-    teams = map_teams(mapname)
-
-    def block_after(label):
-        m = re.search(r"(?m)^\s*" + re.escape(label) + r"\s*\{", text)
-        if not m:
-            return ""
-        depth, i = 0, m.end() - 1
-        while i < len(text):
-            depth += {"{": 1, "}": -1}.get(text[i], 0)
-            if depth == 0:
-                return text[m.end():i]
-            i += 1
         return ""
+    return re.sub(r"//[^\n]*", "", text)
 
+
+def _block_after(text, label):
+    """The inside of `label { ... }` in a .siege / .mbtc text."""
+    m = re.search(r"(?m)^\s*" + re.escape(label) + r"\s*\{", text)
+    if not m:
+        return ""
+    depth, i = 0, m.end() - 1
+    while i < len(text):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        if depth == 0:
+            return text[m.end():i]
+        i += 1
+    return ""
+
+
+def map_objectives(mapname):
+    """{"team1": [{"n": 1, "name": ...}], "team2": [...]} from maps/<map>.siege."""
+    out = {"team1": [], "team2": []}
+    text = _siege_text(mapname)
+    if not text:
+        return out
+    teams = map_teams(mapname)
     for key in ("team1", "team2"):
-        body = block_after(teams[key])
+        body = _block_after(text, teams[key])
         for m in re.finditer(r"Objective(\d+)\s*\{([^{}]*)\}", body):
             name = re.search(r'goalname\s+"([^"]*)"', m.group(2)) or re.search(r'objdesc\s+"([^"]*)"', m.group(2))
             final = re.search(r"final\s+(\d)", m.group(2))
             out[key].append({"n": int(m.group(1)), "name": name.group(1) if name else "Objective " + m.group(1),
                              "final": bool(final and final.group(1) == "1")})
+    return out
+
+
+# --- Classes -----------------------------------------------------------------
+#
+# Each side of a map plays a team config (its .siege's UseTeam, an .mbtc in
+# ext_data/mb2/teamconfig), which lists classes (.mbch files in
+# ext_data/mb2/character, by name) and their subclasses. A player's class
+# shows in the game by that name, which is what a scenario's list holds.
+
+_classes = {"sig": None}
+_MBCLASS_NAMES = {
+    "SOLDIER": "Soldier", "IMPERIAL": "Agent", "ELITETROOPER": "Elite trooper", "COMMANDER": "Commander",
+    "JEDI": "Jedi", "SITH": "Sith", "BOUNTY_HUNTER": "Bounty hunter", "HERO": "Hero", "SBD": "Super droid",
+    "WOOKIE": "Wookiee", "DEKA": "Droideka", "CLONETROOPER": "Clone trooper", "MANDALORIAN": "Mandalorian",
+    "ARCTROOPER": "ARC trooper", "DROIDEKA": "Droideka",
+}
+
+
+def _class_files():
+    """(team configs, classes): lower name -> (pk3, member), later pk3s winning."""
+    with _lock:
+        _refresh()
+        if _classes.get("sig") == _index["sig"]:
+            return _classes["mbtc"], _classes["mbch"]
+        mbtc, mbch = {}, {}
+        for name in _pk3s():
+            path = os.path.join(config.GAMEDATA, name)
+            try:
+                with zipfile.ZipFile(path) as z:
+                    for member in z.namelist():
+                        low = member.lower()
+                        if low.startswith("ext_data/mb2/teamconfig/") and low.endswith(".mbtc"):
+                            mbtc[low.rsplit("/", 1)[1][:-5]] = (path, member)
+                        elif low.startswith("ext_data/mb2/character/") and low.endswith(".mbch"):
+                            mbch[low.rsplit("/", 1)[1][:-5]] = (path, member)
+            except (zipfile.BadZipFile, OSError):
+                continue
+        _classes.update(sig=_index["sig"], mbtc=mbtc, mbch=mbch, maps={}, legends=None)
+        return mbtc, mbch
+
+
+def _read_member(z, member):
+    try:
+        return re.sub(r"//[^\n]*", "", z.read(member).decode("latin1"))
+    except KeyError:
+        return ""
+
+
+class _Zips:
+    """Open pk3s, kept open while a lot is read from them."""
+    def __init__(self):
+        self.open = {}
+
+    def read(self, hit):
+        if hit[0] not in self.open:
+            self.open[hit[0]] = zipfile.ZipFile(hit[0])
+        return _read_member(self.open[hit[0]], hit[1])
+
+    def close(self):
+        for z in self.open.values():
+            z.close()
+
+
+def _class_info(name, mbch, zips):
+    text = zips.read(mbch[name.lower()]) if name.lower() in mbch else ""
+    title = re.search(r'description\s+"([^"\r\n]*)', text, re.I)
+    kind = re.search(r"MBClass\s+MB_CLASS_(\w+)", text, re.I)
+    return {"id": name, "name": (title.group(1).strip() if title and title.group(1).strip() else name),
+            "kind": _MBCLASS_NAMES.get(kind.group(1).upper(), kind.group(1).title()) if kind else ""}
+
+
+def _config_classes(config_name, mbtc, mbch, zips):
+    """A team config's classes: [{"id", "name", "kind", "sub": [...]}]."""
+    if str(config_name).lower() not in mbtc:
+        return []
+    tc = zips.read(mbtc[config_name.lower()])
+    out = []
+    names = re.findall(r'class(\d+)\s+"([^"]+)"', _block_after(tc, "Classes"), re.I)
+    for num, name in sorted(names, key=lambda x: int(x[0])):
+        info = _class_info(name, mbch, zips)
+        subs = re.findall(r'Subclass\d+\s+"([^"]+)"', _block_after(tc, "SubclassesForClass" + num), re.I)
+        info["sub"] = [_class_info(sub, mbch, zips) for sub in subs]
+        out.append(info)
+    return out
+
+
+def map_classes(mapname):
+    """What each side can pick, two ways: "map" - the map's own team configs
+    (Open / Semi-Authentic), and "legends" - Legends mode's roster, the same
+    on every map. Each {"team1": {"config", "classes": [{"id", "name",
+    "kind", "sub": [...]}]}, "team2": ...}."""
+    mbtc, mbch = _class_files()
+    key = str(mapname or "").lower()
+    with _lock:
+        cached = _classes.setdefault("maps", {}).get(key)
+    if cached:
+        return cached
+    text = _siege_text(mapname)
+    teams = map_teams(mapname)
+    out = {"map": {}, "legends": {}}
+    zips = _Zips()
+    try:
+        for side in ("team1", "team2"):
+            m = re.search(r'UseTeam\s+"?([^\s"{}]+)', _block_after(text, teams[side]), re.I) if text else None
+            cfg = m.group(1) if m else ""
+            out["map"][side] = {"config": cfg, "classes": _config_classes(cfg, mbtc, mbch, zips) if cfg else []}
+        with _lock:
+            legends = _classes.get("legends")
+        if not legends:
+            legends = {side: {"config": cfg, "classes": _config_classes(cfg, mbtc, mbch, zips)}
+                       for side, cfg in (("team1", "LEG_Good"), ("team2", "LEG_Evil"))}
+        out["legends"] = legends
+    except (zipfile.BadZipFile, OSError):
+        pass
+    finally:
+        zips.close()
+    with _lock:
+        if _classes.get("sig") == _index["sig"]:
+            _classes["legends"] = out["legends"]
+            _classes["maps"][key] = out
     return out

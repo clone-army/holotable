@@ -17,6 +17,7 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,62}$")
 _lock = threading.Lock()
 
 BEHAVIOURS = ("hunt", "route", "guard", "idle")
+SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
          "player_died", "npc_killed", "after", "counter", "countdown_end")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
@@ -46,6 +47,7 @@ def blank(name, mapname, author):
         "description": "",
         "timeLimit": 900,
         "joinTeam": "any", "anytimeSpawn": False, "respawnSeconds": 5,
+        "limitClasses": False, "classMode": "map", "classes": [],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
         "created": int(time.time()), "createdBy": author,
         "updated": int(time.time()), "updatedBy": author,
@@ -186,6 +188,10 @@ def clean(data):
         "joinTeam": data.get("joinTeam") if data.get("joinTeam") in ("any", "team1", "team2") else "any",
         "anytimeSpawn": bool(data.get("anytimeSpawn")),
         "respawnSeconds": int(max(1, min(60, _num(data.get("respawnSeconds"), 5)))),
+        # The classes players can pick (.mbch names), when limited.
+        "limitClasses": bool(data.get("limitClasses")),
+        "classMode": "legends" if data.get("classMode") == "legends" else "map",
+        "classes": [c for c in (re.sub(r"[^\w\-]", "", str(c or ""))[:39] for c in (data.get("classes") or [])[:256]) if c],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
     }
     for p in lst("points")[:64]:
@@ -334,6 +340,7 @@ def clean(data):
             "scale": int(max(40, min(250, _num(n.get("scale"), 100)))),
             "skill": int(max(1, min(5, _num(n.get("skill"), 3)))),
             "runSpeed": int(max(50, min(400, _num(n.get("runSpeed"), 210)))),
+            "saberColor": n.get("saberColor") if n.get("saberColor") in SABER_COLORS else "blue",
         })
     return out
 
@@ -359,6 +366,7 @@ def _npc_block(n):
         lines.append("\taltFire\t\t1")
     if n["weapon"] == "WP_SABER":
         lines.append("\tsaber\t\tsingle_1")
+        lines.append("\tsaberColor\t{}".format(n["saberColor"]))
     lines += [
         "\thealth\t\t{}".format(n["health"]),
         "\tarmor\t\t{}".format(n["armor"]),
