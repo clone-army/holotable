@@ -347,7 +347,7 @@ def _assets_index():
         _refresh()
         if _assets.get("sig") == _index["sig"]:
             return _assets
-        skins, icons, sounds, effects = {}, {}, {}, {}
+        skins, icons, sounds, effects, music = {}, {}, {}, {}, {}
         for name in _pk3s():
             path = os.path.join(config.GAMEDATA, name)
             try:
@@ -367,13 +367,17 @@ def _assets_index():
                                 icons[(model.lower(), skin.lower())] = (path, member)
                         elif low.startswith("sound/") and low.endswith((".mp3", ".wav")):
                             sounds[low] = (path, member)
+                        elif low.startswith("music/") and low.endswith((".mp3", ".wav", ".ogg")):
+                            # As the game names music: no extension.
+                            music[low.rsplit(".", 1)[0]] = (path, member)
                         elif low.startswith("effects/") and low.endswith(".efx"):
                             # As the game names them: no "effects/", no ".efx".
                             effects[low[8:-4]] = member[8:-4]
             except (zipfile.BadZipFile, OSError):
                 continue
         _assets.update(sig=_index["sig"], skins=skins, icons=icons, sounds=sounds,
-                       sound_list=sorted(sounds), effect_list=sorted(effects.values(), key=str.lower))
+                       sound_list=sorted(sounds), effect_list=sorted(effects.values(), key=str.lower),
+                       music=music, music_list=sorted((m[1].rsplit(".", 1)[0] for m in music.values()), key=str.lower))
         return _assets
 
 
@@ -449,15 +453,23 @@ def map_targets(mapname):
                    for v in out.values()), key=lambda v: v["target"].lower())
 
 
+def list_music():
+    """Every music track in the game's pk3s, as the game names them
+    (music/..., no extension)."""
+    return _assets_index()["music_list"]
+
+
 def sound_file(path):
-    """(bytes, mimetype) of a sound, for previewing in the browser."""
+    """(bytes, mimetype) of a sound or music track, for previewing."""
     a = _assets_index()
-    hit = a["sounds"].get(str(path or "").lower().replace("\\", "/"))
+    key = str(path or "").lower().replace("\\", "/")
+    hit = a["sounds"].get(key) or a["music"].get(key) or a["music"].get(key.rsplit(".", 1)[0])
     if not hit:
         return None
     with zipfile.ZipFile(hit[0]) as z:
         data = z.read(hit[1])
-    return data, ("audio/mpeg" if hit[1].lower().endswith(".mp3") else "audio/wav")
+    ext = hit[1].lower().rsplit(".", 1)[-1]
+    return data, {"mp3": "audio/mpeg", "ogg": "audio/ogg"}.get(ext, "audio/wav")
 
 
 # Weapons NPCs can carry (MBII's WP_ names, as its own .npc files use them).

@@ -1342,9 +1342,15 @@ function actionRow(t, a, i) {
     case 'sound':
       row.append(soundPicker(a, 'path'), placeSelect(a, t, 'Everyone hears it (not at a place)'));
       break;
-    case 'music':
-      row.append(textIn(a, 'path', { placeholder: 'music/... e.g. music/sailbargealternate', maxlength: 120 }));
+    case 'music': {
+      // Every track in the game, filtered as you type; any other path can be typed too.
+      const box = h('div', { class: 'input-row' },
+        h('button', { type: 'button', class: 'btn tiny', title: 'Listen', onclick: () => playSound(a.path) }, '\u25B6'));
+      lateCombo(box, 'music', '/api/music', 'music', a, 'path', 'Search N music tracks (or type a path)',
+        (v) => v.replace(/^music\//i, '').replace(/\//g, ' / '));
+      row.append(box, h('small', { class: 'muted' }, 'Plays for everyone instead of the map\'s music; the map\'s comes back when the scenario ends.'));
       break;
+    }
     case 'explode':
       row.append(placeSelect(a, t),
         h('div', { class: 'grid2' }, field('Damage (at the middle)', numIn(a, 'damage', { min: 0, max: 1000 })), field('Radius', numIn(a, 'radius', { min: 16, max: 2048 }))),

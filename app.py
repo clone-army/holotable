@@ -227,6 +227,12 @@ def api_map_targets(name):
         return fail("Couldn't read that map: {}".format(e), 500)
 
 
+@app.route("/api/music")
+@login_required
+def api_music():
+    return ok(music=gamedata.list_music())
+
+
 @app.route("/api/sounds")
 @login_required
 def api_sounds():
