@@ -937,10 +937,77 @@ function modelSkins(model) {
   return m ? m.skins : [];
 }
 
+// --- Folding cards (NPC types, groups, triggers) ------------------------------
+//
+// A folded card is just its title row and a one-line summary. Which are
+// folded is kept per scenario in this browser.
+let FOLDED = new Set();
+function loadFolded() {
+  try { FOLDED = new Set(JSON.parse(localStorage.getItem('ht-fold-' + SCENARIO_ID) || '[]')); } catch (e) { FOLDED = new Set(); }
+}
+function saveFolded() {
+  try { localStorage.setItem('ht-fold-' + SCENARIO_ID, JSON.stringify([...FOLDED])); } catch (e) { /* private mode */ }
+}
+
+function foldable(card, id, summary) {
+  const title = card.firstChild;
+  const body = h('div', { class: 'fold-body' });
+  while (card.childNodes.length > 1) body.append(card.childNodes[1]);
+  const sum = h('div', { class: 'fold-summary' }, summary);
+  card.append(sum, body);
+  const btn = h('button', { class: 'fold-btn', type: 'button', title: 'Fold / unfold' });
+  title.prepend(btn);
+  const apply = () => {
+    const folded = FOLDED.has(id);
+    card.classList.toggle('folded', folded);
+    body.hidden = folded;
+    sum.hidden = !folded;
+    btn.textContent = folded ? '\u25B8' : '\u25BE';
+  };
+  const toggle = () => { if (FOLDED.has(id)) FOLDED.delete(id); else FOLDED.add(id); saveFolded(); apply(); };
+  btn.addEventListener('click', toggle);
+  sum.addEventListener('click', toggle);
+  apply();
+  return card;
+}
+
+function foldBar(ids, what) {
+  const set = (fold) => { ids.forEach((id) => (fold ? FOLDED.add(id) : FOLDED.delete(id))); saveFolded(); renderPanels(); };
+  return h('div', { class: 'fold-bar' },
+    h('button', { class: 'btn tiny', type: 'button', onclick: () => set(true) }, 'Fold all ' + what),
+    h('button', { class: 'btn tiny', type: 'button', onclick: () => set(false) }, 'Unfold all'));
+}
+
+const nameOf = (list, id) => ((list.find((x) => x.id === id) || {}).name || '?');
+function npcSummary(n) {
+  return [(n.model || '?') + ' / ' + (n.skin || 'default'), (n.weapon || '').replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase(),
+    n.health + ' health' + (n.armor ? ', ' + n.armor + ' armour' : ''), 'skill ' + n.skill].join(' \u00B7 ');
+}
+function groupSummary(g) {
+  const who = g.npcs.length ? g.npcs.join(', ') : 'no NPC types';
+  const many = g.count + (g.perPlayer ? ' +' + g.perPlayer + '/player' : '') + (g.leader ? ' + ' + g.leader : '');
+  const attacks = !g.attacks || g.attacks === 'all' ? 'attacks everyone' : 'attacks ' + S.teams[g.attacks];
+  return [who, many, g.behaviour, attacks].concat(g.spawnAtStart ? ['at start: ' + nameOf(S.scn.points.concat(S.scn.routes), g.spawn)] : []).join(' \u00B7 ');
+}
+const ACTION_SHORT = {
+  spawn: 'spawn', despawn: 'remove group', say: 'NPC speech', tell: 'tell player', message: 'chat', center: 'centre message',
+  explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity',
+  give: 'give', heal: 'heal', kill: 'kill', knockdown: 'knock down', freeze: 'freeze', vehicle: 'vehicle', pickup: 'pickup',
+  move: 'new orders', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
+  objective: 'objective', texture: 'texture swap', gravity: 'gravity', speed: 'speed', addtime: 'round time', win: 'win round', end: 'end',
+};
+function triggerSummary(t) {
+  const when = (WHENS.find((w) => w.v === t.when) || {}).t || t.when;
+  const acts = t.actions.map((a) => ACTION_SHORT[a.do] || a.do);
+  return [when, t.actions.length + ' action' + (t.actions.length === 1 ? '' : 's') + (acts.length ? ': ' + acts.slice(0, 4).join(', ') + (acts.length > 4 ? '...' : '') : '')]
+    .concat(t.repeat ? ['every time'] : [], t.startOff ? ['starts off'] : []).join(' \u00B7 ');
+}
+
 function renderNpcs(el) {
   const s = S.scn;
   el.append(h('p', { class: 'muted' }, 'Your own NPC types for this scenario. They\'re hostile to everyone, like bar fight NPCs. Saving writes them into the server\'s NPC folder; ',
     h('b', {}, 'new or changed types work after the server\'s next map change.'), ' Groups can also use any of the ' + S.npcs.length + ' types the server already has.'));
+  if (s.npcTypes.length) el.append(foldBar(s.npcTypes.map((n) => 'npc:' + n.name), 'npcs'));
   s.npcTypes.forEach((n, i) => {
     const card = h('div', { class: 'card' });
     const skinSel = h('select', { onchange: (e) => { n.skin = e.target.value; soft(); updIcon(); } });
@@ -973,6 +1040,7 @@ function renderNpcs(el) {
       soft();
     }, onchange: (e) => { if (!/^HT_/i.test(n.name)) { n.name = 'HT_' + n.name; e.target.value = n.name; soft(); } } });
     card.append(
+      h('div', { class: 'card-title' }, h('span', { class: 'tag' }, 'npc'), h('b', { class: 'grow' }, n.name || 'unnamed')),
       h('div', { class: 'npc-head' }, icon, h('div', { class: 'grow' }, field('Type name', nameIn, 'Starts with HT_. Used in groups.'))),
       h('div', { class: 'grid2' }, field('Model', modelIn), field('Skin', skinSel)),
       h('div', { class: 'grid2' }, field('Weapon', selectIn(n, 'weapon', S.weapons.map((w) => ({ v: w, t: w.replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase() }))), n.weapon === 'WP_SABER' ? 'Saber NPCs are experimental.' : null),
@@ -982,7 +1050,7 @@ function renderNpcs(el) {
         field('Run speed', numIn(n, 'runSpeed', { min: 50, max: 400 }))),
       h('div', { class: 'row-end' }, h('button', { class: 'btn small danger', onclick: () => { s.npcTypes.splice(i, 1); changed(); } }, 'Delete type')),
     );
-    el.append(card);
+    el.append(foldable(card, 'npc:' + n.name, npcSummary(n)));
     fillSkins();
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
@@ -1012,6 +1080,7 @@ const BEHAVIOURS = [
 function renderGroups(el) {
   const s = S.scn;
   el.append(h('p', { class: 'muted' }, 'Groups of NPCs, spawned by a trigger\'s Spawn action. They and the players can hurt each other.'));
+  if (s.groups.length) el.append(foldBar(s.groups.map((g) => g.id), 'groups'));
   s.groups.forEach((g, i) => {
     const spawnOpts = [{ v: '', t: '- pick -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.routes.map((r) => ({ v: r.id, t: 'Route: ' + r.name + ' (along it)' })));
     const card = h('div', { class: 'card' },
@@ -1048,7 +1117,7 @@ function renderGroups(el) {
         } }, 'Clone group'),
         h('button', { class: 'btn small danger', onclick: () => { s.groups.splice(i, 1); changed(); } }, 'Delete group')),
     );
-    el.append(card);
+    el.append(foldable(card, g.id, groupSummary(g)));
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
     s.groups.push({ id: uid('g'), name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
@@ -1401,6 +1470,7 @@ function renderCounters(el) {
 function renderTriggers(el) {
   const s = S.scn;
   el.append(h('p', { class: 'muted' }, 'When something happens, do things - in order, top to bottom.'));
+  if (s.triggers.length) el.append(foldBar(s.triggers.map((t) => t.id), 'triggers'));
   renderCounters(el);
   s.triggers.forEach((t, i) => {
     const card = h('div', { class: 'card' },
@@ -1437,7 +1507,7 @@ function renderTriggers(el) {
       h('div', { class: 'row-end' },
         h('button', { class: 'btn small', onclick: () => { t.actions.push({ do: whenHasPlayer(t) ? 'tell' : 'center', text: '', style: 'center' }); changed(); } }, '+ Action'),
         h('button', { class: 'btn small danger', onclick: () => { s.triggers.splice(i, 1); changed(); } }, 'Delete trigger')));
-    el.append(card);
+    el.append(foldable(card, t.id, triggerSummary(t)));
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
     s.triggers.push({ id: uid('t'), name: nextName(s.triggers, 'Trigger'), when: s.triggers.length ? 'all_dead' : 'start', area: '', group: '', trigger: '', seconds: 0,
@@ -1505,6 +1575,7 @@ async function load() {
   ]);
   try { S.teams = (await api('/api/maps/' + encodeURIComponent(scn.scenario.map) + '/teams')).teams; } catch (e) { /* Team 1 / 2 */ }
   S.scn = normalise(scn.scenario);
+  loadFolded();
   resetHistoryBase();
   S.npcs = npcs.npcs;
   S.models = models.models;
