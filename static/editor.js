@@ -716,6 +716,7 @@ function validate() {
       if (a.do === 'teleport' && !placeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where to teleport them to.', { tab: 'triggers' });
       if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
       if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
+      if (a.do === 'side' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Change side action has no group.', { tab: 'triggers' });
       if (a.do === 'move' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a New orders action has no group.', { tab: 'triggers' });
       if (a.do === 'move' && a.behaviour === 'follow_class' && !a.class) add('error', 'Trigger "' + nm + '": pick the class the group follows.', { tab: 'triggers' });
       if (a.do === 'move' && a.behaviour === 'follow' && !hasPlayer) add('info', 'Trigger "' + nm + '": no one player sets it off, so the group follows whoever\'s nearest.', { tab: 'triggers' });
@@ -896,12 +897,13 @@ function renderScenario(el) {
       renderPanels();
     }), s.mode === 'keep' ? 'Plays in whatever mode the server is in.'
       : 'If the server is in another mode, !ht play reloads the map in this one first (everyone picks a class again), then starts it. The server goes back to its own mode on the next map.'),
-    ...(s.mode === 'fa' ? [
+    ...(s.mode === 'legends' ? [
       field(S.teams.team1 + ' team', teamPicker(s, 'team1')),
       field(S.teams.team2 + ' team', teamPicker(s, 'team2'),
-        'Any of the game\'s team setups - every player already has them, nothing to download (MBII\'s g_siegeTeam1/2). ' +
-        'A team other than the map\'s own makes !ht play reload the map with it; the map\'s own come back on the next map. ' +
-        'Played by itself (a timer, every round, a background), a scenario keeps the server\'s teams.')] : []),
+        'Legends only (MBII goes by these in no other mode): any of the game\'s team setups instead of the Legends sides - ' +
+        'every player already has them, nothing to download (g_siegeTeam1/2). Whole teams only - the classes in a team are its own; ' +
+        'Limit classes (below) picks which of them can be played. Other teams make !ht play reload the map with them; the usual ' +
+        'Legends sides come back on the next map. Played by itself (a timer, every round, a background), a scenario keeps the server\'s teams.')] : []),
     h('h3', {}, 'Players'),
     field('Players can join', selectIn(s, 'joinTeam', [
       { v: 'any', t: 'Either team (team balance as normal)' },
@@ -937,8 +939,8 @@ function renderScenario(el) {
   );
 }
 
-// The class lists: the map's, or - Full Authentic with its own teams - those.
-const scnTeams = (s) => (s.mode === 'fa' ? [s.team1 || '', s.team2 || ''] : ['', '']);
+// The class lists: the map's, or - Legends with its own teams - those.
+const scnTeams = (s) => (s.mode === 'legends' ? [s.team1 || '', s.team2 || ''] : ['', '']);
 const clsKey = (s) => 'cls:' + (s.map || '') + ':' + scnTeams(s).join(':');
 function loadClasses(s) {
   const [t1, t2] = scnTeams(s);
@@ -952,12 +954,12 @@ function teamPicker(s, side) {
   const reset = () => { s.limitClasses = false; s.classes = []; changed(); renderPanels(); };
   loadList('teams', '/api/teams', 'teams').then((teams) => {
     loadClasses(Object.assign({}, s, { team1: '', team2: '' })).then((c) => {
-      const own = ((c.map || {})[side] || {}).config || 'the map\'s';
-      box.append(combo({ value: s[side] || '', placeholder: 'Map default (' + own + ') - search ' + teams.length + ' teams',
+      const own = ((c.legends || {})[side] || {}).config || 'Legends';
+      box.append(combo({ value: s[side] || '', placeholder: 'Default (' + own + ') - search ' + teams.length + ' teams',
         items: () => teams.map((t) => ({ value: t.id, sub: t.classes })),
         onPick: (v) => { s[side] = v; reset(); },
         onType: (v) => { s[side] = v.replace(/[^\w\-]/g, ''); soft(); } }));
-      if (s[side]) box.append(h('button', { class: 'btn tiny', type: 'button', onclick: () => { s[side] = ''; reset(); } }, 'Map default'));
+      if (s[side]) box.append(h('button', { class: 'btn tiny', type: 'button', onclick: () => { s[side] = ''; reset(); } }, 'Default'));
     });
   });
   return box;
@@ -1205,7 +1207,7 @@ const ACTION_SHORT = {
   spawn: 'spawn', despawn: 'remove group', say: 'NPC speech', tell: 'tell player', message: 'chat', center: 'centre message',
   explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity',
   give: 'give', heal: 'heal', kill: 'kill', knockdown: 'knock down', freeze: 'freeze', vehicle: 'vehicle', pickup: 'pickup',
-  move: 'new orders', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
+  move: 'new orders', side: 'change side', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
   objective: 'objective', texture: 'texture swap', gravity: 'gravity', speed: 'speed', addtime: 'round time', win: 'win round', end: 'end',
 };
 function triggerSummary(t) {
@@ -1294,6 +1296,14 @@ const BEHAVIOURS = [
   { v: 'guard', t: 'Guard - hold where they spawned, fight anyone close' },
   { v: 'idle', t: 'Idle - stand about (fight only if attacked)' },
 ];
+// Who a group attacks (its side) - on the group, and the Change side action.
+const ATTACKS = () => [
+  { v: 'all', t: 'Everyone (hostile to all)' },
+  { v: 'team1', t: 'Only ' + S.teams.team1 + ' - they fight for ' + S.teams.team2 },
+  { v: 'team2', t: 'Only ' + S.teams.team2 + ' - they fight for ' + S.teams.team1 },
+  { v: 'none', t: 'Nobody - peaceful (and they can\'t be hurt)' },
+];
+
 // New orders can also be Follow: after the player who set the trigger off.
 const ORDERS = BEHAVIOURS.concat([
   { v: 'follow', t: 'Follow - the player who set it off' },
@@ -1326,12 +1336,7 @@ function renderGroups(el) {
       g.spawnAtStart ? field('Spawns at', selectIn(g, 'spawn', spawnOpts), 'Where it appears as the scenario starts.')
         : h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' }, 'Otherwise a trigger spawns it, and its Spawn action says where.'),
       field('Behaviour', selectIn(g, 'behaviour', BEHAVIOURS)),
-      field('Attacks', selectIn(g, 'attacks', [
-        { v: 'all', t: 'Everyone (hostile to all)' },
-        { v: 'team1', t: 'Only ' + S.teams.team1 + ' - they fight for ' + S.teams.team2 },
-        { v: 'team2', t: 'Only ' + S.teams.team2 + ' - they fight for ' + S.teams.team1 },
-        { v: 'none', t: 'Nobody - peaceful (and they can\'t be hurt)' },
-      ]), g.attacks === 'none'
+      field('Attacks', selectIn(g, 'attacks', ATTACKS()), g.attacks === 'none'
         ? 'They never fight and can\'t be hurt - for a background\'s customers. Idle stands them on the spot; Route walks it round and round.'
         : g.attacks && g.attacks !== 'all'
         ? 'Players on the other side (and NPCs fighting for it) are left alone - groups on opposite sides fight each other.'
@@ -1402,7 +1407,8 @@ const ACTION_TYPES = [
   { v: 'freeze', t: 'Freeze players (can look, not move or shoot)' },
   { v: 'vehicle', t: 'Spawn a vehicle' },
   { v: 'pickup', t: 'Drop a pickup (medpack, weapon, ammo...)' },
-  { v: 'move', t: 'Give a group new orders (hunt, route, guard, idle)' },
+  { v: 'move', t: 'Give a group new orders (hunt, route, guard, idle, follow)' },
+  { v: 'side', t: 'Change a group\'s side (who it attacks)' },
   { v: 'trigger_on', t: 'Turn a trigger on (and re-arm it)' },
   { v: 'trigger_off', t: 'Turn a trigger off' },
   { v: 'counter', t: 'Change a counter' },
@@ -1539,6 +1545,7 @@ function actionRow(t, a, i) {
     if (a.do === 'freeze') a.seconds = 5;
     if (a.do === 'addtime') a.seconds = 120;
     if (a.do === 'move') a.behaviour = 'hunt';
+    if (a.do === 'side') a.attacks = 'all';
     if (a.do === 'counter') { a.op = 'add'; a.value = 1; a.counter = (S.scn.counters[0] || {}).id || ''; }
     if (a.do === 'countdown') { a.seconds = 30; a.text = ''; }
     if (a.do === 'objective') { a.team = 'team1'; a.objective = 1; }
@@ -1674,6 +1681,15 @@ function actionRow(t, a, i) {
       }
       if (a.behaviour === 'route') row.append(selectIn(a, 'route', [{ v: '', t: '- pick a route -' }].concat(s2.routes.map((r) => ({ v: r.id, t: r.name })))), selectIn(a, 'pace', PACES));
       if (a.behaviour === 'guard') row.append(placeSelect(a, t, 'Where each of them spawned'));
+      break;
+    }
+    case 'side': {
+      const g = S.scn.groups.find((x) => x.id === a.group);
+      row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(S.scn.groups.map((x) => ({ v: x.id, t: x.name })))),
+        selectIn(a, 'attacks', ATTACKS()),
+        h('small', { class: 'muted', style: 'display:block' },
+          'Its NPCs already up switch at once and drop who they were after; any of it spawned later come in on the new side.' +
+          (g ? ' (It starts as: ' + ((ATTACKS().find((o) => o.v === (g.attacks || 'all')) || {}).t || g.attacks) + '.)' : '')));
       break;
     }
     case 'trigger_on': case 'trigger_off':

@@ -784,9 +784,14 @@ def map_classes(mapname, team1="", team2=""):
         zips = _Zips()
         try:
             out = {"map": dict(out["map"]), "legends": out["legends"]}
+            out["legends"] = dict(out["legends"])
             for side, cfg in (("team1", team1), ("team2", team2)):
                 if cfg:
-                    out["map"][side] = {"config": cfg, "classes": _config_classes(cfg, mbtc, mbch, zips)}
+                    # By the name inside the file (what g_siegeTeam goes by), or its file name.
+                    file = cfg if cfg.lower() in mbtc else next(
+                        (t["file"] for t in team_configs() if t["id"].lower() == cfg.lower()), cfg)
+                    # Legends goes by them (MBII); the map's own list too, for its callers.
+                    out["map"][side] = out["legends"][side] = {"config": cfg, "classes": _config_classes(file, mbtc, mbch, zips)}
         finally:
             zips.close()
         return out
