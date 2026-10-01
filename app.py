@@ -2,6 +2,7 @@
 
 Run: python app.py (settings in .env - see .env.example).
 """
+import re
 import time
 from functools import wraps
 
@@ -218,7 +219,16 @@ def api_map_shaders(name):
 @app.route("/api/maps/<name>/classes")
 @login_required
 def api_map_classes(name):
-    return ok(classes=gamedata.map_classes(name))
+    # A scenario's own teams (Full Authentic), instead of the map's.
+    team1 = re.sub(r"[^\w\-]", "", request.args.get("team1", ""))[:63]
+    team2 = re.sub(r"[^\w\-]", "", request.args.get("team2", ""))[:63]
+    return ok(classes=gamedata.map_classes(name, team1, team2))
+
+
+@app.route("/api/teams")
+@login_required
+def api_teams():
+    return ok(teams=gamedata.team_configs())
 
 
 @app.route("/api/maps/<name>/objectives")

@@ -195,6 +195,9 @@ def clean(data):
         "mode": data.get("mode") if data.get("mode") in MODES else ("legends" if data.get("classMode") == "legends" else "fa"),
         "classMode": "legends" if data.get("mode") == "legends" or (not data.get("mode") and data.get("classMode") == "legends") else "map",
         "classes": [c for c in (re.sub(r"[^\w\-]", "", str(c or ""))[:39] for c in (data.get("classes") or [])[:256]) if c],
+        # Full Authentic: team configs instead of the map's own ("" = the map's) - g_siegeTeam1/2.
+        "team1": re.sub(r"[^\w\-]", "", str(data.get("team1") or ""))[:63],
+        "team2": re.sub(r"[^\w\-]", "", str(data.get("team2") or ""))[:63],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
     }
     for p in lst("points")[:64]:

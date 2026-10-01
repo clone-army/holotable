@@ -676,7 +676,7 @@ function validate() {
   if (!s.triggers.length && !startsSpawned) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, or add a trigger.', { tab: 'triggers' });
   else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer or a player entering an area (or a group that spawns at the start).', { tab: 'triggers' });
   if (s.limitClasses) {
-    const c = ((LISTS.cls || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
+    const c = ((LISTS[clsKey(s)] || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
     const sides = s.joinTeam && s.joinTeam !== 'any' ? [s.joinTeam] : ['team1', 'team2'];
     for (const tm of sides) {
       if (c && classIds(c, tm).length && !classIds(c, tm).some((id) => (s.classes || []).includes(id)))
@@ -896,6 +896,12 @@ function renderScenario(el) {
       renderPanels();
     }), s.mode === 'keep' ? 'Plays in whatever mode the server is in.'
       : 'If the server is in another mode, !ht play reloads the map in this one first (everyone picks a class again), then starts it. The server goes back to its own mode on the next map.'),
+    ...(s.mode === 'fa' ? [
+      field(S.teams.team1 + ' team', teamPicker(s, 'team1')),
+      field(S.teams.team2 + ' team', teamPicker(s, 'team2'),
+        'Any of the game\'s team setups - every player already has them, nothing to download (MBII\'s g_siegeTeam1/2). ' +
+        'A team other than the map\'s own makes !ht play reload the map with it; the map\'s own come back on the next map. ' +
+        'Played by itself (a timer, every round, a background), a scenario keeps the server\'s teams.')] : []),
     h('h3', {}, 'Players'),
     field('Players can join', selectIn(s, 'joinTeam', [
       { v: 'any', t: 'Either team (team balance as normal)' },
@@ -915,7 +921,7 @@ function renderScenario(el) {
       s.limitClasses = e.target.checked;
       if (s.limitClasses && !(s.classes || []).length) {
         // Start from every class, to untick the ones not wanted.
-        loadList('cls', '/api/maps/' + encodeURIComponent(s.map) + '/classes', 'classes').then((c) => { s.classes = classIds(c[s.classMode || 'map']); changed(); });
+        loadClasses(s).then((c) => { s.classes = classIds(c[s.classMode || 'map']); changed(); });
       } else changed();
     } }), h('span', {}, 'Limit the classes players can pick')),
     ...(s.limitClasses ? [classPicker(s)] : [])]),
@@ -931,6 +937,32 @@ function renderScenario(el) {
   );
 }
 
+// The class lists: the map's, or - Full Authentic with its own teams - those.
+const scnTeams = (s) => (s.mode === 'fa' ? [s.team1 || '', s.team2 || ''] : ['', '']);
+const clsKey = (s) => 'cls:' + (s.map || '') + ':' + scnTeams(s).join(':');
+function loadClasses(s) {
+  const [t1, t2] = scnTeams(s);
+  const q = t1 || t2 ? '?team1=' + encodeURIComponent(t1) + '&team2=' + encodeURIComponent(t2) : '';
+  return loadList(clsKey(s), '/api/maps/' + encodeURIComponent(s.map) + '/classes' + q, 'classes');
+}
+
+// A team picker: any of the game's team configs, or the map's own.
+function teamPicker(s, side) {
+  const box = h('div', { class: 'team-pick' });
+  const reset = () => { s.limitClasses = false; s.classes = []; changed(); renderPanels(); };
+  loadList('teams', '/api/teams', 'teams').then((teams) => {
+    loadClasses(Object.assign({}, s, { team1: '', team2: '' })).then((c) => {
+      const own = ((c.map || {})[side] || {}).config || 'the map\'s';
+      box.append(combo({ value: s[side] || '', placeholder: 'Map default (' + own + ') - search ' + teams.length + ' teams',
+        items: () => teams.map((t) => ({ value: t.id, sub: t.classes })),
+        onPick: (v) => { s[side] = v; reset(); },
+        onType: (v) => { s[side] = v.replace(/[^\w\-]/g, ''); soft(); } }));
+      if (s[side]) box.append(h('button', { class: 'btn tiny', type: 'button', onclick: () => { s[side] = ''; reset(); } }, 'Map default'));
+    });
+  });
+  return box;
+}
+
 // Every class (and subclass) id in a map's /classes answer, by side.
 function classIds(c, team) {
   c = c || {};
@@ -940,7 +972,7 @@ function classIds(c, team) {
 
 function classPicker(s) {
   const box = h('div', { class: 'class-list' }, h('small', { class: 'muted' }, 'Loading this map\'s classes...'));
-  loadList('cls', '/api/maps/' + encodeURIComponent(s.map) + '/classes', 'classes').then((c) => {
+  loadClasses(s).then((c) => {
     c = c || {};
     box.innerHTML = '';
     s.classes = s.classes || [];
@@ -1613,7 +1645,7 @@ function actionRow(t, a, i) {
       if (a.behaviour === 'follow_class') {
         // The map's (or Legends') classes, by side - the same ids class limits use.
         const sel = h('select', { onchange: (e) => { a.class = e.target.value; changed(); } }, h('option', { value: '' }, 'Loading classes...'));
-        loadList('cls', '/api/maps/' + encodeURIComponent(s2.map) + '/classes', 'classes').then((c) => {
+        loadClasses(s2).then((c) => {
           c = (c || {})[s2.classMode === 'legends' ? 'legends' : 'map'] || {};
           sel.innerHTML = '';
           sel.append(h('option', { value: '' }, '- pick a class -'));

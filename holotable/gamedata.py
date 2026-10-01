@@ -694,7 +694,7 @@ def _class_files():
                             mbch[low.rsplit("/", 1)[1][:-5]] = (path, member)
             except (zipfile.BadZipFile, OSError):
                 continue
-        _classes.update(sig=_index["sig"], mbtc=mbtc, mbch=mbch, maps={}, legends=None)
+        _classes.update(sig=_index["sig"], mbtc=mbtc, mbch=mbch, maps={}, legends=None, teams=None)
         return mbtc, mbch
 
 
@@ -743,12 +743,53 @@ def _config_classes(config_name, mbtc, mbch, zips):
     return out
 
 
-def map_classes(mapname):
-    """What each side can pick, two ways: "map" - the map's own team configs
-    (Open / Semi-Authentic), and "legends" - Legends mode's roster, the same
-    on every map. Each {"team1": {"config", "classes": [{"id", "name",
-    "kind", "sub": [...]}]}, "team2": ...}."""
+def team_configs():
+    """Every team config the game has (the ones g_siegeTeam1/2 can swap in,
+    with nothing for players to download): [{"id", "classes": "A, B, C"}],
+    by name. Cached until the game files change."""
     mbtc, mbch = _class_files()
+    with _lock:
+        cached = _classes.get("teams")
+    if cached is not None:
+        return cached
+    out = []
+    zips = _Zips()
+    try:
+        for low, hit in mbtc.items():
+            text = zips.read(hit)
+            m = re.search(r'name\s+"([^"]+)"', text, re.I)
+            names = [_class_info(n, mbch, zips)["name"] for _, n in
+                     sorted(re.findall(r'class(\d+)\s+"([^"]+)"', _block_after(text, "Classes"), re.I), key=lambda x: int(x[0]))]
+            out.append({"id": hit[1].rsplit("/", 1)[1][:-5] if not m else m.group(1), "file": low,
+                        "classes": ", ".join(names)})
+    except (zipfile.BadZipFile, OSError):
+        pass
+    finally:
+        zips.close()
+    out.sort(key=lambda t: t["id"].lower())
+    with _lock:
+        _classes["teams"] = out
+    return out
+
+
+def map_classes(mapname, team1="", team2=""):
+    """What each side can pick, two ways: "map" - the map's own team configs
+    (Open / Semi-Authentic / Full Authentic), or the ones given instead (a
+    scenario's teams, g_siegeTeam1/2), and "legends" - Legends mode's roster,
+    the same on every map. Each {"team1": {"config", "classes": [{"id",
+    "name", "kind", "sub": [...]}]}, "team2": ...}."""
+    mbtc, mbch = _class_files()
+    if team1 or team2:
+        out = map_classes(mapname)
+        zips = _Zips()
+        try:
+            out = {"map": dict(out["map"]), "legends": out["legends"]}
+            for side, cfg in (("team1", team1), ("team2", team2)):
+                if cfg:
+                    out["map"][side] = {"config": cfg, "classes": _config_classes(cfg, mbtc, mbch, zips)}
+        finally:
+            zips.close()
+        return out
     key = str(mapname or "").lower()
     with _lock:
         cached = _classes.setdefault("maps", {}).get(key)
