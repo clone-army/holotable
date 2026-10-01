@@ -112,7 +112,10 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   `cooldown` seconds (a repeating `timer` goes off every `seconds`). Conditions
   fire as they become true.
 - `do`:
-  - `spawn` / `despawn` (`group`) - bring a group in, or remove what's left of it
+  - `spawn` (`group`, optional `at` - a point or route; else the group's own
+    `spawn` place) / `despawn` (`group`) - bring a group in, or remove what's
+    left of it. A group with `spawnAtStart` spawns as the scenario starts,
+    without a trigger.
   - `say` (`speaker`, `text`, optional `path` voice sound) - an NPC's chat line, everyone
   - `tell` (`text`, `style` `center` or `chat`) - only the player who set it off
     (`enter_area` and `player_died` triggers)

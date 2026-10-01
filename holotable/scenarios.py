@@ -208,7 +208,8 @@ def clean(data):
                 "id": _text(g.get("id"), 39), "name": _text(g.get("name"), 47), "npcs": npcs,
                 "leader": _text(g.get("leader"), 47), "count": int(max(0, min(32, _num(g.get("count"), 1)))),
                 "perPlayer": int(max(0, min(8, _num(g.get("perPlayer"), 0)))), "max": int(max(1, min(32, _num(g.get("max"), 20)))),
-                "spawn": _text(g.get("spawn"), 39), "behaviour": b, "route": _text(g.get("route"), 39),
+                "spawn": _text(g.get("spawn"), 39), "spawnAtStart": bool(g.get("spawnAtStart")),
+                "behaviour": b, "route": _text(g.get("route"), 39),
                 "engage": int(max(0, min(4096, _num(g.get("engage"), 0)))),
                 "attacks": g.get("attacks") if g.get("attacks") in ("all", "team1", "team2") else "all",
             })
@@ -224,6 +225,8 @@ def clean(data):
             act = {"do": d}
             if d in ("spawn", "despawn"):
                 act["group"] = _text(a.get("group"), 39)
+                if d == "spawn":
+                    act["at"] = _text(a.get("at"), 39)  # "" = the group's own spawn place
             elif d == "say":
                 act["speaker"] = _text(a.get("speaker"), 40)
                 act["text"] = _text(a.get("text"), 190)
