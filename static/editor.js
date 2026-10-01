@@ -717,6 +717,7 @@ function validate() {
       if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
       if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
       if (a.do === 'move' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a New orders action has no group.', { tab: 'triggers' });
+      if (a.do === 'move' && a.behaviour === 'follow' && !hasPlayer) add('info', 'Trigger "' + nm + '": no one player sets it off, so the group follows whoever\'s nearest.', { tab: 'triggers' });
       if (a.do === 'move' && a.behaviour === 'route' && !routeIds.has(a.route)) add('error', 'Trigger "' + nm + '": pick the route for the group\'s new orders.', { tab: 'triggers' });
       if ((a.do === 'trigger_on' || a.do === 'trigger_off') && !trigIds.has(a.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger to turn ' + (a.do === 'trigger_on' ? 'on.' : 'off.'), { tab: 'triggers' });
       if (a.do === 'counter' && !s.counters.some((c) => c.id === a.counter)) add('error', 'Trigger "' + nm + '": pick the counter to change.', { tab: 'triggers' });
@@ -1260,6 +1261,8 @@ const BEHAVIOURS = [
   { v: 'guard', t: 'Guard - hold where they spawned, fight anyone close' },
   { v: 'idle', t: 'Idle - stand about (fight only if attacked)' },
 ];
+// New orders can also be Follow: after the player who set the trigger off.
+const ORDERS = BEHAVIOURS.concat([{ v: 'follow', t: 'Follow - the player who set it off' }]);
 const MODES = [
   { v: 'fa', t: 'Full Authentic - the map\'s own classes' },
   { v: 'semi', t: 'Semi-Authentic' },
@@ -1602,7 +1605,17 @@ function actionRow(t, a, i) {
     case 'move': {
       const s2 = S.scn;
       row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(s2.groups.map((g) => ({ v: g.id, t: g.name })))),
-        selectIn(a, 'behaviour', BEHAVIOURS));
+        selectIn(a, 'behaviour', ORDERS));
+      if (a.behaviour === 'follow') {
+        const g = s2.groups.find((x) => x.id === a.group);
+        const what = !g ? '' : g.attacks === 'none' ? ' They\'re peaceful, so they just tag along.'
+          : g.attacks === 'all' || !g.attacks ? ' This group attacks everyone, so they go after that player - give it a side, or make it peaceful, for an escort.'
+          : ' They fight enemies who come close, then carry on following.';
+        row.append(h('small', { class: 'muted', style: 'display:block' },
+          (whenHasPlayer(t) ? 'They walk after the player who set it off, a few steps behind, running to catch up.' :
+            'This trigger isn\'t set off by one player, so they follow whoever\'s nearest them.') + what +
+          ' If that player dies or leaves, they wait where they are.'));
+      }
       if (a.behaviour === 'route') row.append(selectIn(a, 'route', [{ v: '', t: '- pick a route -' }].concat(s2.routes.map((r) => ({ v: r.id, t: r.name })))), selectIn(a, 'pace', PACES));
       if (a.behaviour === 'guard') row.append(placeSelect(a, t, 'Where each of them spawned'));
       break;

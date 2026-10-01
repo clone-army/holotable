@@ -278,7 +278,7 @@ def clean(data):
                 act["seconds"] = int(max(-3600, min(3600, _num(a.get("seconds"), 60))))
             elif d == "move":
                 act["group"] = _text(a.get("group"), 39)
-                act["behaviour"] = a.get("behaviour") if a.get("behaviour") in BEHAVIOURS else "hunt"
+                act["behaviour"] = a.get("behaviour") if a.get("behaviour") in BEHAVIOURS + ("follow",) else "hunt"
                 act["route"] = _text(a.get("route"), 39)
                 act["pace"] = "run" if a.get("pace") == "run" else "walk"
                 act["at"] = _text(a.get("at"), 39)
