@@ -1725,6 +1725,7 @@ function normalise(s) {
   if (!s.respawnSeconds) s.respawnSeconds = 5;
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });
   s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; if (!g.attacks) g.attacks = 'all'; });
+  s.npcTypes.forEach((n) => { if (!n.saberColor) n.saberColor = 'blue'; });
   s.triggers.forEach((t) => { if (!Array.isArray(t.actions)) t.actions = []; });
   s.triggers.forEach((t) => t.actions.forEach((a) => {
     if (a.do === 'spawn' && !a.at) {

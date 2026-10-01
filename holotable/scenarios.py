@@ -366,7 +366,8 @@ def _npc_block(n):
         lines.append("\taltFire\t\t1")
     if n["weapon"] == "WP_SABER":
         lines.append("\tsaber\t\tsingle_1")
-        lines.append("\tsaberColor\t{}".format(n["saberColor"]))
+        # Types saved before the colour option have none: blue, as the editor shows them.
+        lines.append("\tsaberColor\t{}".format(n.get("saberColor") if n.get("saberColor") in SABER_COLORS else "blue"))
     lines += [
         "\thealth\t\t{}".format(n["health"]),
         "\tarmor\t\t{}".format(n["armor"]),
