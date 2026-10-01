@@ -23,7 +23,7 @@ WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_lef
          "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
            "teleport", "use", "despawn", "win", "end",
-           "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side",
+           "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side", "arm",
            "trigger_on", "trigger_off", "counter", "countdown", "objective", "texture", "gravity", "speed")
 WHO_FIXED = ("player", "all", "team1", "team2")
 _NPC_NAME = re.compile(r"^HT_[A-Za-z0-9_]{1,40}$")
@@ -287,6 +287,10 @@ def clean(data):
                 act["route"] = _text(a.get("route"), 39)
                 act["pace"] = "run" if a.get("pace") == "run" else "walk"
                 act["at"] = _text(a.get("at"), 39)
+            elif d == "arm":
+                act["group"] = _text(a.get("group"), 39)
+                w = str(a.get("weapon") or "")
+                act["weapon"] = w if re.match(r"^WP_[A-Z0-9_]{2,24}$", w) and w != "WP_SABER" else "WP_BLASTER"
             elif d == "side":
                 act["group"] = _text(a.get("group"), 39)
                 act["attacks"] = a.get("attacks") if a.get("attacks") in ("all", "team1", "team2", "none") else "all"

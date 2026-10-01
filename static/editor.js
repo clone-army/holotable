@@ -723,6 +723,7 @@ function validate() {
       if (a.do === 'teleport' && !placeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where to teleport them to.', { tab: 'triggers' });
       if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
       if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
+      if (a.do === 'arm' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Give weapon action has no group.', { tab: 'triggers' });
       if (a.do === 'side' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Change side action has no group.', { tab: 'triggers' });
       if (a.do === 'move' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a New orders action has no group.', { tab: 'triggers' });
       if (a.do === 'move' && a.behaviour === 'follow_class' && !a.class) add('error', 'Trigger "' + nm + '": pick the class the group follows.', { tab: 'triggers' });
@@ -1215,7 +1216,7 @@ const ACTION_SHORT = {
   spawn: 'spawn', despawn: 'remove group', say: 'NPC speech', tell: 'tell player', message: 'chat', center: 'centre message',
   explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity',
   give: 'give', heal: 'heal', kill: 'kill', knockdown: 'knock down', freeze: 'freeze', vehicle: 'vehicle', pickup: 'pickup',
-  move: 'new orders', side: 'change side', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
+  move: 'new orders', side: 'change side', arm: 'give weapon', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
   objective: 'objective', texture: 'texture swap', gravity: 'gravity', speed: 'speed', addtime: 'round time', win: 'win round', end: 'end',
 };
 function triggerSummary(t) {
@@ -1502,6 +1503,7 @@ const ACTION_TYPES = [
   { v: 'pickup', t: 'Drop a pickup (medpack, weapon, ammo...)' },
   { v: 'move', t: 'Give a group new orders (hunt, route, guard, idle, follow)' },
   { v: 'side', t: 'Change a group\'s side (who it attacks)' },
+  { v: 'arm', t: 'Give a group a weapon' },
   { v: 'trigger_on', t: 'Turn a trigger on (and re-arm it)' },
   { v: 'trigger_off', t: 'Turn a trigger off' },
   { v: 'counter', t: 'Change a counter' },
@@ -1639,6 +1641,7 @@ function actionRow(t, a, i) {
     if (a.do === 'addtime') a.seconds = 120;
     if (a.do === 'move') a.behaviour = 'hunt';
     if (a.do === 'side') a.attacks = 'all';
+    if (a.do === 'arm') a.weapon = 'WP_BLASTER';
     if (a.do === 'counter') { a.op = 'add'; a.value = 1; a.counter = (S.scn.counters[0] || {}).id || ''; }
     if (a.do === 'countdown') { a.seconds = 30; a.text = ''; }
     if (a.do === 'objective') { a.team = 'team1'; a.objective = 1; }
@@ -1776,6 +1779,12 @@ function actionRow(t, a, i) {
       if (a.behaviour === 'guard') row.append(placeSelect(a, t, 'Where each of them spawned'));
       break;
     }
+    case 'arm':
+      row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(S.scn.groups.map((x) => ({ v: x.id, t: x.name })))),
+        selectIn(a, 'weapon', S.weapons.filter((w) => w !== 'WP_SABER').map((w) => ({ v: w, t: w.replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase() }))),
+        h('small', { class: 'muted', style: 'display:block' },
+          'They switch to it within a second, and any of the group spawned later carry it too. Not lightsabers - make a saber NPC type for those.'));
+      break;
     case 'side': {
       const g = S.scn.groups.find((x) => x.id === a.group);
       row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(S.scn.groups.map((x) => ({ v: x.id, t: x.name })))),
