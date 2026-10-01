@@ -673,7 +673,15 @@ function validate() {
   const ids = (list) => new Set(list.map((x) => x.id));
   const pointIds = ids(s.points), routeIds = ids(s.routes), areaIds = ids(s.areas), groupIds = ids(s.groups), trigIds = ids(s.triggers);
   const startsSpawned = s.groups.some((g) => g.spawnAtStart);
-  if (!s.triggers.length && !startsSpawned) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, or add a trigger.', { tab: 'triggers' });
+  for (const r of s.regulars) {
+    const nm = r.type || 'a regular';
+    if (!r.type) add('error', 'A regular has no NPC type.', { tab: 'regulars' });
+    else if (!knownNpc(r.type)) add('warn', 'Regular "' + nm + '": NPC type "' + r.type + '" isn\'t one the server has.', { tab: 'regulars' });
+    if (hostileOwnType(r.type)) add('warn', 'Regular "' + nm + '" is one of your types that isn\'t Peaceful - it would attack players.', { tab: 'npcs' });
+    if (!pointIds.has(r.at)) add('error', 'Regular "' + nm + '": pick its spot.', { tab: 'regulars' });
+    if ((r.pose === 'patrol' || r.pose === 'pace') && !routeIds.has(r.route)) add('error', 'Regular "' + nm + '": pick the route it walks.', { tab: 'regulars' });
+  }
+  if (!s.triggers.length && !startsSpawned && !s.regulars.length) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, or add a trigger.', { tab: 'triggers' });
   else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer or a player entering an area (or a group that spawns at the start).', { tab: 'triggers' });
   if (s.limitClasses) {
     const c = ((LISTS.cls || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
@@ -730,13 +738,14 @@ function validate() {
       if (a.do === 'say' && !a.text && !a.path) add('warn', 'Trigger "' + nm + '": a Say action is empty.', { tab: 'triggers' });
     });
   }
+  if (s.regulars.length && !s.groups.length && !s.triggers.length)
+    add('info', 'Only regulars: this is a background - pick it for its map on the server\'s Holotable page.', { tab: 'regulars' });
   if (s.triggers.length && !s.triggers.some((t) => t.actions.some((a) => a.do === 'end' || a.do === 'win')))
     add('info', 'Nothing ends it, so it runs until its time limit - e.g. add When: everyone\'s down - End (or Win the round).', { tab: 'triggers' });
   for (const r of s.routes) {
     if (r.points.length < 2) add('warn', 'Route "' + r.name + '" has fewer than 2 points.', { kind: 'route', id: r.id });
     if (S.crossings[r.id]) add('warn', 'Route "' + r.name + '" goes through a wall (red) - NPCs may get stuck. Add a point to go round it.', { kind: 'route', id: r.id });
   }
-  if (s.npcTypes.length) add('info', 'NPC types made here can be spawned after the server\'s next map change.', { tab: 'npcs' });
   S.problems = out;
   const errors = out.filter((p) => p.level === 'error').length, warns = out.filter((p) => p.level === 'warn').length;
   const chip = $('#checks-chip');
@@ -876,7 +885,7 @@ function renderPanels(only) {
     if (t !== activeTab) continue;
     const el = $('#tab-' + t);
     el.innerHTML = '';
-    ({ scenario: renderScenario, places: renderPlaces, npcs: renderNpcs, groups: renderGroups, triggers: renderTriggers, checks: renderChecks })[t](el);
+    ({ scenario: renderScenario, places: renderPlaces, npcs: renderNpcs, groups: renderGroups, regulars: renderRegulars, triggers: renderTriggers, checks: renderChecks })[t](el);
   }
 }
 
@@ -1159,7 +1168,12 @@ function foldBar(ids, what) {
 const nameOf = (list, id) => ((list.find((x) => x.id === id) || {}).name || '?');
 function npcSummary(n) {
   return [(n.model || '?') + ' / ' + (n.skin || 'default'), (n.weapon || '').replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase(),
-    n.health + ' health' + (n.armor ? ', ' + n.armor + ' armour' : ''), 'skill ' + n.skill].join(' \u00B7 ');
+    n.health + ' health' + (n.armor ? ', ' + n.armor + ' armour' : ''), 'skill ' + n.skill].concat(n.peaceful ? ['peaceful'] : []).join(' \u00B7 ');
+}
+function regularSummary(r) {
+  const pose = (POSES.find((p) => p.v === r.pose) || {}).t || r.pose;
+  return [r.type || 'no NPC type', 'at ' + nameOf(S.scn.points, r.at), pose.split(' - ')[0]
+    + ((r.pose === 'patrol' || r.pose === 'pace') ? ' ' + nameOf(S.scn.routes, r.route) : '')].join(' \u00B7 ');
 }
 function groupSummary(g) {
   const who = g.npcs.length ? g.npcs.join(', ') : 'no NPC types';
@@ -1183,8 +1197,8 @@ function triggerSummary(t) {
 
 function renderNpcs(el) {
   const s = S.scn;
-  el.append(h('p', { class: 'muted' }, 'Your own NPC types for this scenario. They\'re hostile to everyone, like bar fight NPCs. Saving writes them into the server\'s NPC folder; ',
-    h('b', {}, 'new or changed types work after the server\'s next map change.'), ' Groups can also use any of the ' + S.npcs.length + ' types the server already has.'));
+  el.append(h('p', { class: 'muted' }, 'Your own NPC types for this scenario. They\'re hostile to everyone - unless Peaceful, for regulars. Saving writes them into the server\'s NPC folder, ',
+    'and the server picks up new or changed ones the next time a scenario starts. Groups and regulars can also use any of the ' + S.npcs.length + ' types the server already has.'));
   if (s.npcTypes.length) el.append(foldBar(s.npcTypes.map((n) => 'npc:' + n.name), 'npcs'));
   s.npcTypes.forEach((n, i) => {
     const card = h('div', { class: 'card' });
@@ -1228,6 +1242,8 @@ function renderNpcs(el) {
       h('div', { class: 'grid3' }, field('Health', numIn(n, 'health', { min: 1, max: 5000 })), field('Armour', numIn(n, 'armor', { min: 0, max: 1000 })), field('Size %', numIn(n, 'scale', { min: 40, max: 250 }))),
       h('div', { class: 'grid2' }, field('Skill', selectIn(n, 'skill', [1, 2, 3, 4, 5].map((k) => ({ v: k, t: ['', '1 - raw recruit', '2 - poor', '3 - average', '4 - veteran', '5 - elite'][k] })))),
         field('Run speed', numIn(n, 'runSpeed', { min: 50, max: 400 }))),
+      h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!n.peaceful, onchange: (e) => { n.peaceful = e.target.checked; changed(); } }),
+        h('span', {}, 'Peaceful - for regulars: attacks nobody, like the bartender')),
       h('div', { class: 'row-end' }, h('button', { class: 'btn small danger', onclick: () => { s.npcTypes.splice(i, 1); changed(); } }, 'Delete type')),
     );
     el.append(foldable(card, 'npc:' + n.name, npcSummary(n)));
@@ -1318,6 +1334,60 @@ function renderGroups(el) {
     s.groups.push({ id: gid, name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', routePace: 'walk', engage: 0, attacks: 'all' });
     changed();
   } }, '+ New group'));
+}
+
+const POSES = [
+  { v: 'stand', t: 'Stand - just stand there' },
+  { v: 'idle', t: 'Idle - stand about, looking round and gesturing now and then' },
+  { v: 'bartend', t: 'Bartend - idle, more often (and gestures when !bartender answers)' },
+  { v: 'sit', t: 'Sit' },
+  { v: 'roam', t: 'Roam - wander freely' },
+  { v: 'patrol', t: 'Patrol - walk a route, round and round' },
+  { v: 'pace', t: 'Pace - walk a route to the end and back' },
+];
+
+// A custom NPC type of this scenario that isn't peaceful (it would go for players).
+const hostileOwnType = (name) => S.scn.npcTypes.some((n) => n.name.toLowerCase() === String(name || '').toLowerCase() && !n.peaceful);
+
+function renderRegulars(el) {
+  const s = S.scn;
+  el.append(h('p', { class: 'muted' }, 'The regulars hang about while this scenario is a map\'s ', h('b', {}, 'background'),
+    ' (picked on the server\'s Holotable page) - like the cantina\'s bartender and customers. They don\'t fight and can\'t be hurt, step out while another scenario plays, and are back once it\'s over. ',
+    'Each stands at a point (Places) - its facing is the point\'s. Use peaceful types: the server\'s own (bartender, jawa, protocol...) or yours with Peaceful ticked.'));
+  if (s.regulars.length) el.append(foldBar(s.regulars.map((r) => r.id), 'regulars'));
+  s.regulars.forEach((r, i) => {
+    const moves = r.pose === 'patrol' || r.pose === 'pace';
+    const card = h('div', { class: 'card' },
+      h('div', { class: 'card-title' }, h('span', { class: 'tag' }, 'regular'), h('b', { class: 'grow' }, r.type || 'pick an NPC type')),
+      field('NPC type', combo({ value: r.type, items: npcItems, placeholder: 'Search ' + (S.npcs.length + s.npcTypes.length) + ' NPC types',
+        onPick: (v) => { r.type = v; changed(); }, onType: (v) => { r.type = v.replace(/[\s;]/g, ''); soft(); } }),
+        hostileOwnType(r.type) ? 'This type of yours isn\'t Peaceful - it would attack players. Tick Peaceful on it (NPCs tab).' : null),
+      field('Spot', selectIn(r, 'at', [{ v: '', t: '- pick a point -' }].concat(s.points.map((p) => ({ v: p.id, t: p.name })))),
+        moves ? 'Where it appears; it then heads off along the route.' : 'Where it stands, facing the point\'s way.'),
+      field('What they do', selectIn(r, 'pose', POSES)),
+      moves ? field('Route', selectIn(r, 'route', [{ v: '', t: '- pick -' }].concat(s.routes.map((x) => ({ v: x.id, t: x.name }))))) : null,
+      h('div', { class: 'row-end' },
+        h('button', { class: 'btn small', onclick: () => {
+          const copy = JSON.parse(JSON.stringify(r));
+          copy.id = uid('n');
+          s.regulars.splice(i + 1, 0, copy);
+          openCard(copy.id);
+          changed();
+        } }, 'Clone'),
+        h('button', { class: 'btn small danger', onclick: () => { s.regulars.splice(i, 1); changed(); } }, 'Delete')),
+    );
+    el.append(foldable(card, r.id, regularSummary(r)));
+  });
+  if (s.regulars.length < 16) {
+    el.append(h('button', { class: 'btn primary', onclick: () => {
+      const id = uid('n');
+      openCard(id);
+      s.regulars.push({ id, type: '', at: '', pose: 'idle', route: '' });
+      changed();
+    } }, '+ New regular'));
+  } else {
+    el.append(h('p', { class: 'muted' }, '16 regulars at most.'));
+  }
 }
 
 // "When" choices. player: the trigger knows who set it off (for "tell",
@@ -1733,7 +1803,7 @@ function renderChecks(el) {
 // --- Load and save -----------------------------------------------------------
 
 function normalise(s) {
-  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters', 'regulars']) if (!Array.isArray(s[k])) s[k] = [];
   if (!s.joinTeam) s.joinTeam = 'any';
   if (!s.mode) s.mode = s.classMode === 'legends' ? 'legends' : 'fa';
   s.classMode = s.mode === 'legends' ? 'legends' : 'map';
@@ -1765,10 +1835,22 @@ async function save() {
     validate();
     renderPanels();
     draw();
+    return true;
   } catch (err) {
     $('#save-state').textContent = 'Not saved';
     toast(err.message, true);
+    return false;
   }
+}
+
+// A copy of the saved scenario, opened in the editor. Unsaved changes are
+// saved first, so the copy has them too.
+async function cloneScenario() {
+  if (S.dirty && !(await save())) return;
+  try {
+    const r = await api('/api/scenarios/' + SCENARIO_ID + '/duplicate', {});
+    location.href = '/edit/' + r.id;
+  } catch (err) { toast(err.message, true); }
 }
 
 async function load() {
@@ -1833,6 +1915,7 @@ document.querySelectorAll('.tool[data-tool]').forEach((b) => b.addEventListener(
 $('#fit-btn').addEventListener('click', fit);
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $('#save-btn').addEventListener('click', save);
+$('#clone-btn').addEventListener('click', cloneScenario);
 $('#undo-btn').addEventListener('click', undo);
 $('#redo-btn').addEventListener('click', redo);
 $('#checks-chip').addEventListener('click', () => showTab('checks'));

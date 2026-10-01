@@ -17,6 +17,8 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,62}$")
 _lock = threading.Lock()
 
 BEHAVIOURS = ("hunt", "route", "guard", "idle")
+# What a regular (an NPC of a background scenario) does at its spot.
+POSES = ("stand", "sit", "idle", "bartend", "roam", "patrol", "pace")
 MODES = ("fa", "semi", "open", "legends", "keep")
 SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
@@ -195,7 +197,7 @@ def clean(data):
         "mode": data.get("mode") if data.get("mode") in MODES else ("legends" if data.get("classMode") == "legends" else "fa"),
         "classMode": "legends" if data.get("mode") == "legends" or (not data.get("mode") and data.get("classMode") == "legends") else "map",
         "classes": [c for c in (re.sub(r"[^\w\-]", "", str(c or ""))[:39] for c in (data.get("classes") or [])[:256]) if c],
-        "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
+        "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [], "regulars": [],
     }
     for p in lst("points")[:64]:
         if isinstance(p, dict):
@@ -319,6 +321,16 @@ def clean(data):
             "repeat": bool(t.get("repeat")), "cooldown": round(max(1, min(3600, _num(t.get("cooldown"), 5))), 1),
             "actions": acts,
         })
+    # Regulars: what hangs about while the scenario is a map's background
+    # (picked on the server's Holotable page) - they don't fight.
+    for r in lst("regulars")[:16]:
+        if isinstance(r, dict):
+            pose = r.get("pose") if r.get("pose") in POSES else "stand"
+            out["regulars"].append({
+                "id": _text(r.get("id"), 39), "type": re.sub(r"[\s;]", "", str(r.get("type") or ""))[:31],
+                "at": _text(r.get("at"), 39), "pose": pose,
+                "route": _text(r.get("route"), 39) if pose in ("patrol", "pace") else "",
+            })
     for c in lst("counters")[:16]:
         if isinstance(c, dict) and c.get("id"):
             out["counters"].append({"id": _text(c.get("id"), 39), "name": _text(c.get("name"), 40),
@@ -344,6 +356,7 @@ def clean(data):
             "skill": int(max(1, min(5, _num(n.get("skill"), 3)))),
             "runSpeed": int(max(50, min(400, _num(n.get("runSpeed"), 210)))),
             "saberColor": n.get("saberColor") if n.get("saberColor") in SABER_COLORS else "blue",
+            "peaceful": bool(n.get("peaceful")),
         })
     return out
 
@@ -351,8 +364,10 @@ def clean(data):
 # --- NPC types -> the game's NPC folder --------------------------------------
 #
 # MBII reads ext_data/NPCs/*.npc when a map loads. Every scenario's own types
-# go into one file there, holotable.npc, rewritten on each save - so a new
-# or changed type can be spawned after the server's next map change.
+# go into one file there, holotable.npc, rewritten on each save; the engine
+# has MBII read them again when it changes, before a scenario starts. A
+# peaceful type (for regulars) is neutral, like MBII's bartender: it attacks
+# nobody and nobody's NPCs go for it.
 
 NPC_FILE = os.path.join("ext_data", "NPCs", "holotable.npc")
 
@@ -381,8 +396,8 @@ def _npc_block(n):
         lines.append("\t{}\t{}".format(key, k))
     lines += [
         "\trank\t\t{}".format("ensign" if k >= 4 else "crewman"),
-        "\tplayerTeam\tTEAM_FREE",
-        "\tenemyTeam\tTEAM_PLAYER",
+        "\tplayerTeam\t{}".format("TEAM_NEUTRAL" if n.get("peaceful") else "TEAM_FREE"),
+        "\tenemyTeam\t{}".format("TEAM_NEUTRAL" if n.get("peaceful") else "TEAM_PLAYER"),
         "\tclass\t\t{}".format("CLASS_REBORN" if n["weapon"] == "WP_SABER" else "CLASS_STORMTROOPER"),
         "\tyawspeed\t{}".format(60 + 12 * k),
         "\twalkSpeed\t55",

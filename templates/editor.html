@@ -9,6 +9,7 @@
   <span id="save-state" class="muted small"></span>
   <button id="undo-btn" class="btn icon-btn" type="button" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span>Undo</span></button>
   <button id="redo-btn" class="btn icon-btn" type="button" title="Redo (Ctrl+Y)" disabled><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+  <button id="clone-btn" class="btn" type="button" title="Make a copy of this scenario and open it (saves your changes first)">Clone</button>
   <button id="save-btn" class="btn primary" type="button">Save</button>
 </div>
 {% endblock %}
@@ -43,6 +44,7 @@
       <button class="tab" data-tab="places">Places</button>
       <button class="tab" data-tab="npcs">NPCs</button>
       <button class="tab" data-tab="groups">Groups</button>
+      <button class="tab" data-tab="regulars">Regulars</button>
       <button class="tab" data-tab="triggers">Triggers</button>
       <button class="tab" data-tab="checks">Checks</button>
     </div>
@@ -50,6 +52,7 @@
     <div class="tab-body" id="tab-places" hidden></div>
     <div class="tab-body" id="tab-npcs" hidden></div>
     <div class="tab-body" id="tab-groups" hidden></div>
+    <div class="tab-body" id="tab-regulars" hidden></div>
     <div class="tab-body" id="tab-triggers" hidden></div>
     <div class="tab-body" id="tab-checks" hidden></div>
   </aside>

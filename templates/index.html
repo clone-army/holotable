@@ -46,7 +46,7 @@
           <td class="small muted" data-time="{{ s.updated }}">{{ s.updatedBy }}</td>
           <td class="actions">
             <a class="btn small" href="/edit/{{ s.id }}">Edit</a>
-            <button class="btn small" data-dup="{{ s.id }}">Copy</button>
+            <button class="btn small" data-dup="{{ s.id }}" title="Make a copy of this scenario and open it">Clone</button>
             <button class="btn small danger" data-del="{{ s.id }}" data-name="{{ s.name }}">Delete</button>
           </td>
         </tr>

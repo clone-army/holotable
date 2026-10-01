@@ -9,7 +9,7 @@ from flask import Flask, Response, abort, jsonify, redirect, render_template, re
 
 from holotable import config, gamedata, scenarios, users
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 app = Flask(__name__)
 app.secret_key = config.secret_key()
