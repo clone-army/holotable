@@ -157,8 +157,8 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 - `limitClasses` + `classes`: when true, only those classes (MBII's class
   names, e.g. `JT_Padawan`) can be played; anyone on another is sent back to
   pick again. `classMode` is which list the editor shows: `map` (the map's
-  team setups - Open / Semi-Authentic) or `legends` (the Legends roster).
-  Not in Full Authentic mode, where players build their own classes.
+  team setups - Full Authentic) or `legends` (the Legends roster). Not in
+  Open mode, where players build their own classes.
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `routePace` is `walk`
   (default) or `run`. `engage` is how close a player comes before a route
   walker or guard goes for them.

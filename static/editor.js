@@ -933,7 +933,7 @@ function classPicker(s) {
     s.classes = s.classes || [];
     const mode = s.classMode === 'legends' ? 'legends' : 'map';
     box.append(field('Server mode', selectIn(s, 'classMode', [
-      { v: 'map', t: 'Open / Semi-Authentic - this map\'s own classes' },
+      { v: 'map', t: 'Full Authentic - this map\'s own classes' },
       { v: 'legends', t: 'Legends - the Legends roster' },
     ], () => { if (!s.classes.some((id) => classIds(c[s.classMode]).includes(id))) s.classes = classIds(c[s.classMode]); changed(); }),
       'Pick the mode the server runs - the classes differ.'));
@@ -955,7 +955,7 @@ function classPicker(s) {
         k.sub.forEach((x) => box.append(tick(x.id, x.name, true)));
       }
     }
-    box.append(h('small', { class: 'muted' }, 'Anyone on another class is told to pick again. ' + (mode === 'legends' ? 'Legends classes are the same on every map.' : 'From this map\'s own team setups.') + ' Not in Full Authentic mode, where players build their own classes.'));
+    box.append(h('small', { class: 'muted' }, 'Anyone on another class is told to pick again. ' + (mode === 'legends' ? 'Legends classes are the same on every map.' : 'From this map\'s own team setups.') + ' Not in Open mode, where players build their own classes.'));
   });
   return box;
 }
