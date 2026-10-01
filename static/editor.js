@@ -1034,7 +1034,19 @@ function renderGroups(el) {
         : 'Pick a side to make them allies of the other one.'),
       g.behaviour === 'route' ? field('Route to walk', selectIn(g, 'route', [{ v: '', t: '- pick -' }].concat(s.routes.map((r) => ({ v: r.id, t: r.name }))))) : null,
       (g.behaviour === 'route' || g.behaviour === 'guard') ? field('Engage range', numIn(g, 'engage', { min: 0, max: 4096, placeholder: g.behaviour === 'guard' ? '600' : '350' }), 'How close a player comes before they go for them (0 = default).') : null,
-      h('div', { class: 'row-end' }, h('button', { class: 'btn small danger', onclick: () => { s.groups.splice(i, 1); changed(); } }, 'Delete group')),
+      h('div', { class: 'row-end' },
+        h('button', { class: 'btn small', title: 'A copy of this group, right below it - change what you need', onclick: () => {
+          // Everything copied but its id; a name that says it's a copy.
+          const copy = JSON.parse(JSON.stringify(g));
+          copy.id = uid('g');
+          let name = (g.name || 'Group') + ' copy', n = 2;
+          while (s.groups.some((x) => x.name === name)) name = (g.name || 'Group') + ' copy ' + n++;
+          copy.name = name;
+          s.groups.splice(i + 1, 0, copy);
+          changed();
+          toast('Cloned - "' + name + '" is below. Triggers still spawn the original; add a Spawn action for the copy.');
+        } }, 'Clone group'),
+        h('button', { class: 'btn small danger', onclick: () => { s.groups.splice(i, 1); changed(); } }, 'Delete group')),
     );
     el.append(card);
   });
