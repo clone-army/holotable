@@ -785,6 +785,42 @@ def sabers():
     return out
 
 
+_attributes = {"sig": None, "list": None}
+
+
+def attributes():
+    """Every MBII attribute (MB_ATT_*) the game's classes and NPC files use:
+    [{"id", "max" (the highest level any class gives it), "npcs" (how many of
+    MBII's own NPC files give it - those are known to work on NPCs)}], most
+    used on NPCs first."""
+    with _lock:
+        _refresh()
+        if _attributes["sig"] == _index["sig"] and _attributes["list"] is not None:
+            return _attributes["list"]
+    top, npcs = {}, {}
+    for name in _pk3s():
+        path = os.path.join(config.GAMEDATA, name)
+        try:
+            with zipfile.ZipFile(path) as z:
+                for member in z.namelist():
+                    low = member.lower()
+                    if low.startswith("ext_data/mb2/character/") and low.endswith(".mbch"):
+                        for att, level in re.findall(r"(MB_ATT_[A-Z0-9_]+)(?:,(\d+))?", _read_member(z, member)):
+                            top[att] = max(top.get(att, 1), int(level or 1))
+                    elif low.startswith("ext_data/npcs/") and low.endswith(".npc"):
+                        for att, level in re.findall(r"(MB_ATT_[A-Z0-9_]+)\s+(\d+)", _read_member(z, member)):
+                            npcs[att] = npcs.get(att, 0) + 1
+                            top[att] = max(top.get(att, 1), int(level))
+        except (zipfile.BadZipFile, OSError):
+            continue
+    top.pop("MB_ATT_INVALID", None)
+    out = sorted(({"id": a, "max": min(100, m), "npcs": npcs.get(a, 0)} for a, m in top.items()),
+                 key=lambda x: (-x["npcs"], x["id"]))
+    with _lock:
+        _attributes.update(sig=_index["sig"], list=out)
+    return out
+
+
 def team_configs():
     """Every team config the game has (the ones g_siegeTeam1/2 can swap in,
     with nothing for players to download): [{"id", "classes": "A, B, C"}],

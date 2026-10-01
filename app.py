@@ -231,6 +231,12 @@ def api_sabers():
     return ok(sabers=gamedata.sabers())
 
 
+@app.route("/api/attributes")
+@login_required
+def api_attributes():
+    return ok(attributes=gamedata.attributes())
+
+
 @app.route("/api/teams")
 @login_required
 def api_teams():

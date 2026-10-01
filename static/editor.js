@@ -1265,6 +1265,7 @@ function renderNpcs(el) {
       h('div', { class: 'grid3' }, field('Health', numIn(n, 'health', { min: 1, max: 5000 })), field('Armour', numIn(n, 'armor', { min: 0, max: 1000 })), field('Size %', numIn(n, 'scale', { min: 40, max: 250 }))),
       h('div', { class: 'grid2' }, field('Skill', selectIn(n, 'skill', [1, 2, 3, 4, 5].map((k) => ({ v: k, t: ['', '1 - raw recruit', '2 - poor', '3 - average', '4 - veteran', '5 - elite'][k] })))),
         field('Run speed', numIn(n, 'runSpeed', { min: 50, max: 400 }))),
+      abilityFields(n),
       h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!n.peaceful, onchange: (e) => { n.peaceful = e.target.checked; changed(); } }),
         h('span', {}, 'Peaceful - attacks nobody, like the bartender (for a background\'s customers)')),
       h('div', { class: 'row-end' }, h('button', { class: 'btn small danger', onclick: () => { s.npcTypes.splice(i, 1); changed(); } }, 'Delete type')),
@@ -1310,6 +1311,55 @@ function saberFields(n) {
         : field('Style', selectIn(n, 'saberStyle', SABER_STYLES)),
       h('small', { class: 'muted', style: 'display:block;margin-bottom:10px' },
         'E.g. a MagnaGuard: model magnaguard, saber electrostaff. Grievous: model grievous4, sabers grievb4 and grievg4.'));
+  });
+  return box;
+}
+
+// MBII attributes for an NPC type. Passive ones (defences, armour, plating,
+// strength...) work on NPCs - MBII's own NPC files use them; ones a player
+// has to use (jetpack, cloak, sentry...) the NPC AI never does.
+const ATT_NAMES = {
+  MB_ATT_FP_SABER_DEFENSE: 'Saber defence', MB_ATT_GUN_DEFENSE: 'Blaster defence', MB_ATT_DEFLECT: 'Blaster deflect',
+  MB_ATT_FORCEBLOCK: 'Force block', MB_ATT_FORCEFOCUS: 'Force focus', MB_ATT_HEALING: 'Healing / auto repair',
+  MB_ATT_BLAST_ARMOUR: 'Blast armour', MB_ATT_MAGNETIC_PLATING: 'Magnetic plating', MB_ATT_CORTOSIS: 'Cortosis (saber resistant)',
+  MB_ATT_BESKAR: 'Beskar armour', MB_ATT_ENV_PROT: 'Environment protection', MB_ATT_WOOKIE_STRENGTH: 'Strength',
+  MB_ATT_WOOKIEE_FURY: 'Wookiee fury', MB_ATT_DEXTERITY: 'Dexterity', MB_ATT_GETUPS: 'Quick get-ups', MB_ATT_FLIPKICK: 'Flip kick',
+  MB_ATT_SPEEDLUNGE: 'Speed lunge', MB_ATT_SABER_COMBO: 'Saber combos', MB_ATT_FP_REPULSE: 'Force repulse',
+  MB_ATT_BUNNY_HOP: 'Bunny hop', MB_ATT_FLOAT_HOP: 'Float hop', MB_ATT_DASH: 'Dash', MB_ATT_STAMINA: 'Stamina',
+  MB_ATT_KNOCKDOWN_ROLL: 'Knockdown roll', MB_ATT_SHIELD_RECHARGE: 'Shield recharge', MB_ATT_RECHARGE: 'Battery recharge',
+  MB_ATT_CCTRAINING: 'Close combat training', MB_ATT_DODGE: 'Dodge', MB_ATT_ARMOUR: 'Armour', MB_ATT_FP_LIGHTNING: 'Force lightning',
+  MB_ATT_FP_PULL: 'Force pull', MB_ATT_FP_RAGE: 'Force rage', MB_ATT_FIREPOWER: 'Firepower',
+};
+const attLabel = (id) => ATT_NAMES[id] || id.replace(/^MB_ATT_(FP_)?/, '').replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+
+function abilityFields(n) {
+  n.attributes = n.attributes || [];
+  const box = h('div', { class: 'abilities' }, h('b', {}, 'Abilities'),
+    h('small', { class: 'muted', style: 'display:block;margin-bottom:6px' },
+      'MBII class attributes. Passive ones - defences, armour, plating, strength - work on NPCs (MBII\'s own use them); ' +
+      'ones a player has to use (jetpack, cloak, sentry...) the NPC never will. E.g. a MagnaGuard: saber defence 1, blaster defence 1, ' +
+      'force block 3, magnetic plating 1, blast armour 1. Grievous: saber defence 3, blaster defence 2, deflect 1, force block 3.'));
+  loadList('atts', '/api/attributes', 'attributes').then((atts) => {
+    const byId = {};
+    atts.forEach((a) => { byId[a.id] = a; });
+    const items = () => atts.map((a) => ({ value: a.id, sub: attLabel(a.id) + (a.npcs ? ' \u00B7 used by MBII NPCs' : '') + ' \u00B7 up to ' + a.max }));
+    n.attributes.forEach((a, i) => {
+      const max = (byId[a.id] || {}).max || 100;
+      box.append(h('div', { class: 'grid-att', style: 'display:flex;gap:6px;align-items:center;margin-bottom:4px' },
+        h('span', { class: 'grow', title: a.id }, attLabel(a.id)),
+        h('input', { type: 'number', min: 1, max: max, value: a.level, style: 'width:70px', title: '1 to ' + max,
+          oninput: (e) => { a.level = clamp(Math.round(+e.target.value) || 1, 1, max); soft(); } }),
+        h('button', { class: 'btn tiny', type: 'button', title: 'Remove', onclick: () => { n.attributes.splice(i, 1); changed(); } }, 'x')));
+    });
+    if (n.attributes.length < 24) {
+      box.append(combo({ items, clearOnPick: true, placeholder: '+ add an ability - search ' + atts.length,
+        onPick: (v) => { if (!n.attributes.some((a) => a.id === v)) n.attributes.push({ id: v, level: 1 }); changed(); } }));
+    }
+    box.append(h('div', { class: 'grid3', style: 'margin-top:8px' },
+      field('PB chance', numIn(n, 'pbChance', { min: 0, max: 100, placeholder: 'game' }), 'MBII NPCs: ~40'),
+      field('MB chance', numIn(n, 'mbChance', { min: 0, max: 100, placeholder: 'game' }), 'MBII NPCs: ~4'),
+      field('SB chance', numIn(n, 'sbChance', { min: 0, max: 100, placeholder: 'game' }), 'MBII NPCs: 50-90')),
+      field('Force pool', numIn(n, 'forcePool', { min: 0, max: 1000, placeholder: 'game' }), 'For force-based abilities (MBII NPCs: 100-200). 0 = the game\'s own.'));
   });
   return box;
 }
@@ -1869,6 +1919,7 @@ function normalise(s) {
     if (!n.saberColor) n.saberColor = 'blue';
     if (!n.saber2Color) n.saber2Color = 'red';
     if (n.saberStyle === undefined) n.saberStyle = 0;
+    if (!Array.isArray(n.attributes)) n.attributes = [];
   });
   s.triggers.forEach((t) => { if (!Array.isArray(t.actions)) t.actions = []; });
   s.triggers.forEach((t) => t.actions.forEach((a) => {

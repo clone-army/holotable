@@ -359,6 +359,15 @@ def clean(data):
             # Single-saber style, 1-5 (fast, medium, strong, Desann, Tavion); 0 = the saber's own.
             # Two sabers fight dual and a staff hilt staff by themselves.
             "saberStyle": int(max(0, min(5, _num(n.get("saberStyle"), 0)))),
+            # MBII attributes ("MB_ATT_GUN_DEFENSE 2"...) - passive ones work on NPCs.
+            "attributes": [{"id": a["id"], "level": int(max(1, min(100, _num(a.get("level"), 1))))}
+                           for a in (n.get("attributes") or [])[:24]
+                           if isinstance(a, dict) and re.match(r"^MB_ATT_[A-Z0-9_]{2,40}$", str(a.get("id") or ""))],
+            # Saber blocking (MBII's PBchance / MBchance / SBchance) and force pool; 0 = the game's own.
+            "pbChance": int(max(0, min(100, _num(n.get("pbChance"), 0)))),
+            "mbChance": int(max(0, min(100, _num(n.get("mbChance"), 0)))),
+            "sbChance": int(max(0, min(100, _num(n.get("sbChance"), 0)))),
+            "forcePool": int(max(0, min(1000, _num(n.get("forcePool"), 0)))),
             "peaceful": bool(n.get("peaceful")),
         })
     return out
@@ -394,6 +403,14 @@ def _npc_block(n):
             lines.append("\tsaber2Color\t{}".format(n.get("saber2Color") if n.get("saber2Color") in SABER_COLORS else "red"))
         if n.get("saberStyle"):
             lines.append("\tsaberStyle\t{}".format(n["saberStyle"]))
+    seen = set()
+    for a in n.get("attributes") or []:
+        if a["id"] not in seen:
+            seen.add(a["id"])
+            lines.append("\t{}\t{}".format(a["id"], a["level"]))
+    for key, field in (("PBchance", "pbChance"), ("MBchance", "mbChance"), ("SBchance", "sbChance"), ("forcePowerMax", "forcePool")):
+        if n.get(field):
+            lines.append("\t{}\t{}".format(key, n[field]))
     lines += [
         "\thealth\t\t{}".format(n["health"]),
         "\tarmor\t\t{}".format(n["armor"]),
