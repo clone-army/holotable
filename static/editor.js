@@ -667,6 +667,10 @@ function knownNpc(name) {
   return S.npcs.some((n) => n.name.toLowerCase() === l) || S.scn.npcTypes.some((n) => n.name.toLowerCase() === l);
 }
 
+// NPC types the server refuses to spawn (they take it down - Holo_TypeRefused
+// in the engine): MBII's boba_fett, its one Boba Fett AI (jetpack) NPC.
+const CRASHY_NPCS = new Set(['boba_fett']);
+
 function validate() {
   const s = S.scn, out = [];
   const add = (level, text, focus) => out.push({ level, text, focus });
@@ -695,6 +699,7 @@ function validate() {
     if (g.attacks === 'none' && g.behaviour === 'hunt') add('warn', 'Group "' + nm + '" is peaceful but set to Hunt - it will just stand there. Use Idle or Route.', { tab: 'groups' });
     if (s.joinTeam && s.joinTeam !== 'any' && g.attacks && g.attacks !== 'all' && g.attacks !== 'none' && g.attacks !== s.joinTeam)
       add('warn', 'Group "' + nm + '" only attacks ' + S.teams[g.attacks] + ', but players can only join ' + S.teams[s.joinTeam] + ' - so they\'re allies, not enemies.', { tab: 'groups' });
+    [...g.npcs, g.leader].filter(Boolean).forEach((n) => { if (CRASHY_NPCS.has(n.toLowerCase())) add('error', 'Group "' + nm + '": NPC type "' + n + '" crashes the server, so it\'s never spawned - pick another.', { tab: 'groups' }); });
     [...g.npcs, g.leader].filter(Boolean).forEach((n) => { if (!knownNpc(n)) add('warn', 'Group "' + nm + '": NPC type "' + n + '" isn\'t one the server has.', { tab: 'groups' }); });
   }
   for (const t of s.triggers) {
