@@ -710,6 +710,8 @@ function validate() {
     if (!t.actions.length) add('warn', 'Trigger "' + nm + '" does nothing - add an action.', { tab: 'triggers' });
     if (t.actions.length > 16) add('error', 'Trigger "' + nm + '" has ' + t.actions.length + ' actions - 16 at most (only the first 16 are kept). Split it, e.g. with "Some seconds after another trigger".', { tab: 'triggers' });
     if ((t.when === 'all_in_area') && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
+    if (t.when === 'group_in_area' && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
+    if (t.when === 'group_in_area' && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
     if ((t.when === 'group_left') && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
     if (t.when === 'counter' && !s.counters.some((c) => c.id === t.counter)) add('error', 'Trigger "' + nm + '": pick the counter.', { tab: 'triggers' });
     if (t.when === 'countdown_end' && !s.triggers.some((x) => x.actions.some((a) => a.do === 'countdown'))) add('warn', 'Trigger "' + nm + '" waits for a countdown, but nothing starts one.', { tab: 'triggers' });
@@ -1468,6 +1470,7 @@ const WHENS = [
   { v: 'all_in_area', t: 'Every player is inside an area' },
   { v: 'group_dead', t: 'A group is all down' },
   { v: 'group_left', t: 'A group is down to N or fewer' },
+  { v: 'group_in_area', t: 'NPCs of a group walk into an area' },
   { v: 'all_dead', t: 'Every NPC so far is down' },
   { v: 'npc_killed', t: 'Any scenario NPC is killed' },
   { v: 'player_died', t: 'A player dies', player: true },
@@ -1864,6 +1867,11 @@ function renderTriggers(el) {
     if (t.when === 'group_dead') card.append(groupSel());
     if (t.when === 'group_left') card.append(h('div', { class: 'grid2' }, groupSel(), field('N or fewer left', numIn(t, 'count', { min: 0, max: 32 }))));
     if (t.when === 'players') card.append(field('Players in the game', numIn(t, 'count', { min: 1, max: 64 })));
+    if (t.when === 'group_in_area') {
+      card.append(h('div', { class: 'grid3' }, groupSel(), areaSel(), field('How many of them', numIn(t, 'count', { min: 1, max: 32, placeholder: '1' }))),
+        h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' },
+          'Fires as that many of the group are inside it at once - e.g. the droids reach the reactor. With "every time", again each time they come back in.'));
+    }
     if (t.when === 'counter') card.append(h('div', { class: 'grid3' },
       field('Counter', selectIn(t, 'counter', [{ v: '', t: '- pick -' }].concat(s.counters.map((c) => ({ v: c.id, t: c.name }))))),
       field('is', selectIn(t, 'compare', [{ v: '>=', t: 'at least' }, { v: '==', t: 'exactly' }, { v: '<=', t: 'at most' }])),

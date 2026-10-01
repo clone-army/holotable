@@ -20,7 +20,7 @@ BEHAVIOURS = ("hunt", "route", "guard", "idle")
 MODES = ("fa", "semi", "open", "legends", "keep")
 SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
-         "player_died", "npc_killed", "after", "counter", "countdown_end")
+         "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
            "teleport", "use", "despawn", "win", "end",
            "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side",
