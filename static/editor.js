@@ -183,6 +183,115 @@ function drawNow() {
 
 const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d', sel: '#ffffff' };
 
+// The map's own entities, by kind - drawn faintly when ticked in the
+// cut panel (the choice is remembered in this browser).
+const ENT_KINDS = [
+  { k: 'spawn', t: 'Spawns', col: '#c8d7e6', on: true },
+  { k: 'mover', t: 'Doors', col: '#c39bff' },
+  { k: 'trigger', t: 'Triggers', col: '#3fd0c9' },
+  { k: 'item', t: 'Items', col: '#ff9ff3' },
+  { k: 'npc', t: 'NPCs', col: '#f2e27a' },
+  { k: 'other', t: 'Other', col: '#d5dde6' },
+];
+const SPAWN_COL = { team1: '#5fb4ff', team2: '#ff6b6b' };
+S.ents = null;
+S.entHover = null;
+S.entShow = (() => {
+  try { const v = JSON.parse(localStorage.getItem('ht-ents')); if (v && typeof v === 'object') return v; } catch (e) { /* none yet */ }
+  return Object.fromEntries(ENT_KINDS.map((e) => [e.k, !!e.on]));
+})();
+
+function entColour(e) {
+  if (e.k === 'spawn') return /team1/i.test(e.c) ? SPAWN_COL.team1 : /team2/i.test(e.c) ? SPAWN_COL.team2 : ENT_KINDS[0].col;
+  return (ENT_KINDS.find((x) => x.k === e.k) || ENT_KINDS[5]).col;
+}
+
+// Near enough the cut to show: a box that reaches into the band, or a point in it.
+function entInBand(e) {
+  return e.b ? (e.b[2] <= S.cut + 16 && e.b[5] >= S.cut - BAND) : (e.z <= S.cut + 16 && e.z >= S.cut - BAND);
+}
+
+function entsShown() {
+  return (S.ents || []).filter((e) => S.entShow[e.k] && entInBand(e));
+}
+
+function setupEntKinds() {
+  const box = $('#ent-kinds');
+  box.innerHTML = '';
+  const counts = {};
+  (S.ents || []).forEach((e) => { counts[e.k] = (counts[e.k] || 0) + 1; });
+  for (const kind of ENT_KINDS) {
+    const n = S.ents ? (counts[kind.k] || 0) : (kind.k === 'spawn' ? 1 : 0);
+    const input = h('input', { type: 'checkbox', checked: !!S.entShow[kind.k], disabled: !n, onchange: (ev) => {
+      S.entShow[kind.k] = ev.target.checked;
+      try { localStorage.setItem('ht-ents', JSON.stringify(S.entShow)); } catch (e) { /* private mode */ }
+      draw();
+    } });
+    box.append(h('label', { class: 'check', title: S.ents ? n + ' on this map' : '' }, input,
+      h('i', { style: 'background:' + (kind.k === 'spawn' ? 'linear-gradient(90deg,' + SPAWN_COL.team1 + ' 50%,' + SPAWN_COL.team2 + ' 50%)' : kind.col) }), kind.t));
+  }
+}
+
+// The entity under the mouse, if any (within a few pixels, or inside its box).
+function entAt(sx, sy) {
+  const shown = entsShown();
+  let best = null, bd = 100;
+  for (const e of shown) {
+    const [x, y] = w2s(e.x, e.y);
+    const d = (x - sx) ** 2 + (y - sy) ** 2;
+    if (d < bd) { bd = d; best = e; }
+  }
+  if (best) return best;
+  for (const e of shown) {
+    if (!e.b) continue;
+    const [x1, y1] = w2s(e.b[0], e.b[4]), [x2, y2] = w2s(e.b[3], e.b[1]);
+    if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) return e;
+  }
+  return null;
+}
+
+function drawEntities() {
+  if (!S.ents) {
+    // Not loaded (yet): the player spawns from the geometry, as before.
+    if (!S.entShow.spawn) return;
+    const sp = S.geo.spawns;
+    ctx.fillStyle = 'rgba(200,215,230,0.45)';
+    for (let i = 0; i < sp.length; i += 3) {
+      if (sp[i + 2] > S.cut + 16 || sp[i + 2] < S.cut - BAND) continue;
+      const [x, y] = w2s(sp[i], sp[i + 1]);
+      ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 3.5, y + 3); ctx.lineTo(x - 3.5, y + 3); ctx.closePath(); ctx.fill();
+    }
+    return;
+  }
+  ctx.save();
+  for (const e of entsShown()) {
+    const col = entColour(e), hot = e === S.entHover;
+    ctx.strokeStyle = col; ctx.fillStyle = col;
+    // A dark edge under each, so they read on the bright floors.
+    const dark = 'rgba(5,11,20,0.85)';
+    if (e.b) {
+      const [x1, y1] = w2s(e.b[0], e.b[4]), [x2, y2] = w2s(e.b[3], e.b[1]);
+      const bw = Math.max(3, x2 - x1), bh = Math.max(3, y2 - y1);
+      ctx.globalAlpha = hot ? 0.35 : 0.2;
+      ctx.fillRect(x1, y1, bw, bh);
+      ctx.globalAlpha = 1;
+      ctx.setLineDash(e.k === 'trigger' ? [5, 3] : []);
+      ctx.lineWidth = hot ? 4.5 : 3.5; ctx.strokeStyle = dark; ctx.strokeRect(x1, y1, bw, bh);
+      ctx.lineWidth = hot ? 2.5 : 1.5; ctx.strokeStyle = col; ctx.strokeRect(x1, y1, bw, bh);
+      ctx.setLineDash([]);
+    } else {
+      const [x, y] = w2s(e.x, e.y), r = hot ? 7 : 5;
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      if (e.k === 'spawn') { ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.87, y + r * 0.7); ctx.lineTo(x - r * 0.87, y + r * 0.7); }
+      else { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); }
+      ctx.closePath();
+      ctx.lineWidth = 2; ctx.strokeStyle = dark; ctx.stroke(); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 function alphaFor(zv) { return zv > S.cut + 16 ? 0.3 : 1; }
 
 function label(text, x, y, colour) {
@@ -201,14 +310,9 @@ function drawOverlay() {
   const s = S.scn;
   if (!s) return;
   const zoom = S.view.zoom;
-  // The map's player spawns, faintly - for finding your way about.
-  const sp = S.geo.spawns;
-  ctx.fillStyle = 'rgba(200,215,230,0.45)';
-  for (let i = 0; i < sp.length; i += 3) {
-    if (sp[i + 2] > S.cut + 16 || sp[i + 2] < S.cut - BAND) continue;
-    const [x, y] = w2s(sp[i], sp[i + 1]);
-    ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 3.5, y + 3); ctx.lineTo(x - 3.5, y + 3); ctx.closePath(); ctx.fill();
-  }
+  // The map's own entities (spawns, doors, triggers...), faintly - for
+  // finding your way about.
+  drawEntities();
   // Areas
   for (const a of s.areas) {
     const [x, y] = w2s(a.x, a.y);
@@ -376,6 +480,8 @@ function onMove(e) {
   const r = canvas.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
   const [wx, wy] = s2w(sx, sy);
   S.hover = { sx, sy, wx, wy };
+  const eh = S.ents ? entAt(sx, sy) : null;
+  if (eh !== S.entHover) { S.entHover = eh; draw(); }
   updateHud();
   const d = S.drag;
   if (!d) { if (S.drafting) draw(); return; }
@@ -484,6 +590,10 @@ function updateHud() {
     if (below.length > 1) where += '  (also ' + below.slice(1, 4).map(Math.round).join(', ') + ')';
     const above = all.filter((z) => z > S.cut + 8);
     if (above.length) where += '  | above the cut: ' + above.slice(-3).reverse().map(Math.round).join(', ');
+  }
+  const e = S.entHover;
+  if (e) {
+    where += '  |  ' + e.c + (e.npc ? ' (' + e.npc + ')' : '') + (e.n ? '  "' + e.n + '"' : '') + (e.t ? '  -> ' + e.t : '') + '  z ' + e.z;
   }
   $('#hud').innerHTML = '<div>' + esc(where) + '</div><div class="muted">' + esc(HINTS[S.tool] || '') + '</div>';
 }
@@ -1673,6 +1783,10 @@ async function load() {
     if (!res.ok || g.ok === false) throw new Error(g.error || 'Could not load the map.');
     S.geo = prepGeometry(g);
     $('#loading').hidden = true;
+    setupEntKinds();
+    api('/api/maps/' + encodeURIComponent(scn.scenario.map) + '/entities')
+      .then((r) => { S.ents = r.entities || []; setupEntKinds(); draw(); })
+      .catch(() => { /* just the spawns, from the geometry */ });
     setupCut();
     checkRoutes();
     validate();

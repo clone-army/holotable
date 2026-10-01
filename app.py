@@ -162,6 +162,15 @@ def api_geometry(name):
     return Response(blob, mimetype="application/json", headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600"})
 
 
+@app.route("/api/maps/<name>/entities")
+@login_required
+def api_map_entities(name):
+    try:
+        return ok(entities=gamedata.map_entities(name))
+    except Exception as e:
+        return fail("Couldn't read that map: {}".format(e), 500)
+
+
 @app.route("/api/maps/<name>/teams")
 @login_required
 def api_map_teams(name):

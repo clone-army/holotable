@@ -20,6 +20,10 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
 - **Places.** Points (with a facing), routes (loops NPCs walk) and areas
   (trigger zones). Click to place; each lands on the floor under the cut, and
   you can drag to move. Route legs that go through a wall show red.
+- **Map entities.** The cut panel shows the map's own entities by kind -
+  spawns (coloured by side), doors and lifts, triggers, items, NPC spawners
+  and the rest (relays, location markers...). Hover one for its class and
+  name. Lights and decoration models are left out.
 - **NPC types.** Pick a model and skin (every player model in the game, with
   its icon where there is one), weapon (and saber colour), health, armour,
   size, skill and speed.

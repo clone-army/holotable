@@ -453,6 +453,74 @@ def map_targets(mapname):
                    for v in out.values()), key=lambda v: v["target"].lower())
 
 
+# What a map entity is, for showing them by kind. Lights and decoration
+# models are left out - there are thousands and they say nothing useful.
+_ENTITY_SKIP = re.compile(r"^(light|worldspawn|misc_model|misc_model_static|misc_model_breakable|misc_skyportal|fx_\w+|ambient_\w+|lightjunior)$", re.I)
+_entities = {}
+
+
+def _entity_kind(cls):
+    c = cls.lower()
+    if c.startswith("info_player_"):
+        return "spawn"
+    if c.startswith(("func_door", "func_plat", "func_train", "func_rotating", "func_bobbing", "func_pendulum",
+                     "func_breakable", "func_button", "func_usable", "func_glass", "func_wall", "func_static")):
+        return "mover"
+    if c.startswith("trigger_"):
+        return "trigger"
+    if c.startswith(("item_", "weapon_", "ammo_", "holdable_", "pickup_")):
+        return "item"
+    if c.startswith("npc_"):
+        return "npc"
+    return "other"
+
+
+def map_entities(mapname):
+    """The map's entities, for showing on the map: [{"c": classname, "k":
+    kind, "n": targetname, "t": target, "x", "y", "z", and for brush ones
+    (doors, triggers...) their box "b": [x1, y1, z1, x2, y2, z2]}]."""
+    entry = find_map(mapname)
+    if not entry:
+        return []
+    key = (str(mapname).lower(), entry.get("size"), str(entry.get("stamp")))
+    if key in _entities:
+        return _entities[key]
+    data = _read_bsp(entry)
+    eo, el = struct.unpack_from("<ii", data, 8)
+    mo, ml = struct.unpack_from("<ii", data, 8 + 7 * 8)
+    models = [struct.unpack_from("<6f", data, mo + i * 40) for i in range(ml // 40)]
+    ents = data[eo: eo + el].decode("latin1", "replace")
+    out = []
+    for block in re.findall(r"\{[^{}]*\}", ents):
+        kv = dict((k.lower(), v) for k, v in re.findall(r'"([^"]+)"\s+"([^"]*)"', block))
+        cls = kv.get("classname", "")
+        if not cls or _ENTITY_SKIP.match(cls):
+            continue
+        item = {"c": cls, "k": _entity_kind(cls)}
+        for src, dst in (("targetname", "n"), ("target", "t"), ("npc_type", "npc")):
+            if kv.get(src):
+                item[dst] = kv[src][:48]
+        org = [0.0, 0.0, 0.0]
+        m = re.match(r"\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)", kv.get("origin", ""))
+        if m:
+            org = [float(m.group(i)) for i in (1, 2, 3)]
+        mm = re.match(r"\*(\d+)$", kv.get("model", ""))
+        if mm and int(mm.group(1)) < len(models):
+            # A brush entity: its box (plus its origin, for ones built at 0 0 0).
+            b = models[int(mm.group(1))]
+            box = [b[0] + org[0], b[1] + org[1], b[2] + org[2], b[3] + org[0], b[4] + org[1], b[5] + org[2]]
+            item["b"] = [round(v) for v in box]
+            org = [(box[0] + box[3]) / 2, (box[1] + box[4]) / 2, box[2]]
+        elif not m:
+            continue  # nowhere to show it
+        item["x"], item["y"], item["z"] = (round(v) for v in org)
+        out.append(item)
+        if len(out) >= 4000:
+            break
+    _entities[key] = out
+    return out
+
+
 def list_music():
     """Every music track in the game's pk3s, as the game names them
     (music/..., no extension)."""

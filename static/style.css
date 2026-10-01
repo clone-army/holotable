@@ -138,6 +138,10 @@ input[type="range"] { padding: 0; accent-color: var(--holo); }
 .levels button { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 11px; padding: 1px 6px; cursor: pointer; }
 .levels button.active, .levels button:hover { color: var(--holo); border-color: var(--holo-dim); }
 .check { display: inline-flex !important; gap: 6px; align-items: center; justify-content: flex-start !important; cursor: pointer; }
+.ent-head { margin: 10px 0 4px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+.ent-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.ent-kinds .check { font-size: 11px; }
+.ent-kinds i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .hud {
   position: absolute; left: 12px; bottom: 12px; right: 250px; font-size: 12px; background: rgba(10, 21, 34, 0.85);
   border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; pointer-events: none;
