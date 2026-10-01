@@ -886,6 +886,14 @@ function renderScenario(el) {
     field('Name', textIn(s, 'name', { maxlength: 60 }, () => { $('#scn-name').value = s.name; })),
     field('Description', textIn(s, 'description', { maxlength: 200, placeholder: 'Shown in the !ht list' })),
     field('Time limit (minutes)', h('input', { type: 'number', min: 1, max: 60, value: Math.round(s.timeLimit / 60), oninput: (e) => { s.timeLimit = clamp(Math.round(+e.target.value * 60) || 900, 30, 3600); soft(); } }), 'It ends by itself after this long. The round clock is held open for it.'),
+    field('Server mode', selectIn(s, 'mode', MODES, () => {
+      const was = s.classMode;
+      s.classMode = s.mode === 'legends' ? 'legends' : 'map';
+      // A class list from the other roster means nothing now.
+      if (was !== s.classMode && s.limitClasses) { s.limitClasses = false; s.classes = []; }
+      renderPanels();
+    }), s.mode === 'keep' ? 'Plays in whatever mode the server is in.'
+      : 'If the server is in another mode, !ht play reloads the map in this one first (everyone picks a class again), then starts it. The server goes back to its own mode on the next map.'),
     h('h3', {}, 'Players'),
     field('Players can join', selectIn(s, 'joinTeam', [
       { v: 'any', t: 'Either team (team balance as normal)' },
@@ -898,6 +906,9 @@ function renderScenario(el) {
       h('span', {}, 'Anytime spawn - join any time, and respawn after dying')),
     ...(s.anytimeSpawn ? [field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 }))] : []),
     h('h3', {}, 'Classes'),
+    ...(s.mode === 'open' || s.mode === 'keep' ? [h('small', { class: 'muted' }, s.mode === 'open'
+      ? 'In Open mode players build their own classes - there\'s no class list to limit.'
+      : 'Pick a server mode to limit classes - the lists differ by mode.')] : [
     h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!s.limitClasses, onchange: (e) => {
       s.limitClasses = e.target.checked;
       if (s.limitClasses && !(s.classes || []).length) {
@@ -905,7 +916,7 @@ function renderScenario(el) {
         loadList('cls', '/api/maps/' + encodeURIComponent(s.map) + '/classes', 'classes').then((c) => { s.classes = classIds(c[s.classMode || 'map']); changed(); });
       } else changed();
     } }), h('span', {}, 'Limit the classes players can pick')),
-    ...(s.limitClasses ? [classPicker(s)] : []),
+    ...(s.limitClasses ? [classPicker(s)] : [])]),
     h('div', { class: 'info' },
       h('b', {}, 'Playing it: '), 'on any server running the Holotable plugin, change to ', h('code', {}, s.map),
       ', log in (', h('code', {}, '!login'), ') and type ', h('code', {}, '!ht'), ' to list the map\'s scenarios. ',
@@ -932,11 +943,6 @@ function classPicker(s) {
     box.innerHTML = '';
     s.classes = s.classes || [];
     const mode = s.classMode === 'legends' ? 'legends' : 'map';
-    box.append(field('Server mode', selectIn(s, 'classMode', [
-      { v: 'map', t: 'Full Authentic - this map\'s own classes' },
-      { v: 'legends', t: 'Legends - the Legends roster' },
-    ], () => { if (!s.classes.some((id) => classIds(c[s.classMode]).includes(id))) s.classes = classIds(c[s.classMode]); changed(); }),
-      'Pick the mode the server runs - the classes differ.'));
     c = c[mode] || {};
     const tick = (id, name, sub) => h('label', { class: 'check-row' + (sub ? ' indent' : '') },
       h('input', { type: 'checkbox', checked: s.classes.includes(id), onchange: (e) => {
@@ -1251,6 +1257,13 @@ const BEHAVIOURS = [
   { v: 'route', t: 'Route - walk a route, fight players who come close' },
   { v: 'guard', t: 'Guard - hold where they spawned, fight anyone close' },
   { v: 'idle', t: 'Idle - stand about (fight only if attacked)' },
+];
+const MODES = [
+  { v: 'fa', t: 'Full Authentic - the map\'s own classes' },
+  { v: 'semi', t: 'Semi-Authentic' },
+  { v: 'legends', t: 'Legends - the Legends roster' },
+  { v: 'open', t: 'Open - players build their own classes' },
+  { v: 'keep', t: 'Don\'t change - the server\'s mode' },
 ];
 const SABER_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
 const PACES = [{ v: 'walk', t: 'Walking' }, { v: 'run', t: 'Running' }];
@@ -1722,6 +1735,8 @@ function renderChecks(el) {
 function normalise(s) {
   for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters']) if (!Array.isArray(s[k])) s[k] = [];
   if (!s.joinTeam) s.joinTeam = 'any';
+  if (!s.mode) s.mode = s.classMode === 'legends' ? 'legends' : 'fa';
+  s.classMode = s.mode === 'legends' ? 'legends' : 'map';
   if (!s.respawnSeconds) s.respawnSeconds = 5;
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });
   s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; if (!g.attacks) g.attacks = 'all'; });

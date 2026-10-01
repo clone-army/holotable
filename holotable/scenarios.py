@@ -17,6 +17,7 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,62}$")
 _lock = threading.Lock()
 
 BEHAVIOURS = ("hunt", "route", "guard", "idle")
+MODES = ("fa", "semi", "open", "legends", "keep")
 SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
          "player_died", "npc_killed", "after", "counter", "countdown_end")
@@ -47,7 +48,7 @@ def blank(name, mapname, author):
         "description": "",
         "timeLimit": 900,
         "joinTeam": "any", "anytimeSpawn": False, "respawnSeconds": 5,
-        "limitClasses": False, "classMode": "map", "classes": [],
+        "mode": "fa", "limitClasses": False, "classMode": "map", "classes": [],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
         "created": int(time.time()), "createdBy": author,
         "updated": int(time.time()), "updatedBy": author,
@@ -190,7 +191,9 @@ def clean(data):
         "respawnSeconds": int(max(1, min(60, _num(data.get("respawnSeconds"), 5)))),
         # The classes players can pick (.mbch names), when limited.
         "limitClasses": bool(data.get("limitClasses")),
-        "classMode": "legends" if data.get("classMode") == "legends" else "map",
+        # The MBII mode it plays in (the server reloads the map in it first).
+        "mode": data.get("mode") if data.get("mode") in MODES else ("legends" if data.get("classMode") == "legends" else "fa"),
+        "classMode": "legends" if data.get("mode") == "legends" or (not data.get("mode") and data.get("classMode") == "legends") else "map",
         "classes": [c for c in (re.sub(r"[^\w\-]", "", str(c or ""))[:39] for c in (data.get("classes") or [])[:256]) if c],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
     }
