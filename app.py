@@ -191,6 +191,27 @@ def api_model_icon(model, skin):
     return Response(hit[0], mimetype=hit[1], headers={"Cache-Control": "private, max-age=86400"})
 
 
+@app.route("/api/vehicles")
+@login_required
+def api_vehicles():
+    return ok(vehicles=gamedata.list_vehicles(), items=gamedata.list_items())
+
+
+@app.route("/api/maps/<name>/shaders")
+@login_required
+def api_map_shaders(name):
+    try:
+        return ok(shaders=gamedata.map_shaders(name))
+    except Exception as e:
+        return fail("Couldn't read that map: {}".format(e), 500)
+
+
+@app.route("/api/maps/<name>/objectives")
+@login_required
+def api_map_objectives(name):
+    return ok(objectives=gamedata.map_objectives(name))
+
+
 @app.route("/api/effects")
 @login_required
 def api_effects():

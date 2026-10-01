@@ -582,8 +582,11 @@ function validate() {
     if (t.when === 'group_dead' && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
     if (t.when === 'after' && !trigIds.has(t.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger it follows.', { tab: 'triggers' });
     if (!t.actions.length) add('warn', 'Trigger "' + nm + '" does nothing - add an action.', { tab: 'triggers' });
+    if (t.actions.length > 16) add('error', 'Trigger "' + nm + '" has ' + t.actions.length + ' actions - 16 at most (only the first 16 are kept). Split it, e.g. with "Some seconds after another trigger".', { tab: 'triggers' });
     if ((t.when === 'all_in_area') && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
     if ((t.when === 'group_left') && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
+    if (t.when === 'counter' && !s.counters.some((c) => c.id === t.counter)) add('error', 'Trigger "' + nm + '": pick the counter.', { tab: 'triggers' });
+    if (t.when === 'countdown_end' && !s.triggers.some((x) => x.actions.some((a) => a.do === 'countdown'))) add('warn', 'Trigger "' + nm + '" waits for a countdown, but nothing starts one.', { tab: 'triggers' });
     const placeIds = new Set([...pointIds, ...areaIds]);
     const hasPlayer = whenHasPlayer(t);
     t.actions.forEach((a) => {
@@ -592,6 +595,16 @@ function validate() {
       if (a.do === 'teleport' && !placeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where to teleport them to.', { tab: 'triggers' });
       if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
       if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
+      if (a.do === 'move' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a New orders action has no group.', { tab: 'triggers' });
+      if (a.do === 'move' && a.behaviour === 'route' && !routeIds.has(a.route)) add('error', 'Trigger "' + nm + '": pick the route for the group\'s new orders.', { tab: 'triggers' });
+      if ((a.do === 'trigger_on' || a.do === 'trigger_off') && !trigIds.has(a.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger to turn ' + (a.do === 'trigger_on' ? 'on.' : 'off.'), { tab: 'triggers' });
+      if (a.do === 'counter' && !s.counters.some((c) => c.id === a.counter)) add('error', 'Trigger "' + nm + '": pick the counter to change.', { tab: 'triggers' });
+      if ((a.do === 'vehicle' || a.do === 'pickup') && !placeIds.has(a.at) && !(a.at === 'player' && hasPlayer)) add('error', 'Trigger "' + nm + '": pick where the ' + a.do + ' goes.', { tab: 'triggers' });
+      if (a.do === 'vehicle' && !a.vehicle) add('error', 'Trigger "' + nm + '": pick the vehicle.', { tab: 'triggers' });
+      if (a.do === 'pickup' && !a.item) add('error', 'Trigger "' + nm + '": pick the pickup.', { tab: 'triggers' });
+      if (a.do === 'give' && !a.item) add('error', 'Trigger "' + nm + '": pick what to give.', { tab: 'triggers' });
+      if (a.do === 'texture' && (!a.from || !a.to)) add('error', 'Trigger "' + nm + '": pick both textures for the swap.', { tab: 'triggers' });
+      if (a.who === 'player' && !hasPlayer && ['give', 'heal', 'kill', 'knockdown', 'freeze'].includes(a.do)) add('warn', 'Trigger "' + nm + '": "the player who set it off" - this trigger isn\'t set off by one player.', { tab: 'triggers' });
       if (a.do === 'spawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Spawn action has no group.', { tab: 'triggers' });
       if (a.do === 'say' && !a.text && !a.path) add('warn', 'Trigger "' + nm + '": a Say action is empty.', { tab: 'triggers' });
     });
@@ -1040,6 +1053,8 @@ const WHENS = [
   { v: 'player_died', t: 'A player dies', player: true },
   { v: 'players', t: 'N or more players are in the game' },
   { v: 'after', t: 'Some seconds after another trigger' },
+  { v: 'counter', t: 'A counter reaches a value' },
+  { v: 'countdown_end', t: 'The countdown reaches zero' },
 ];
 const ACTION_TYPES = [
   { v: 'spawn', t: 'Spawn a group' },
@@ -1055,8 +1070,57 @@ const ACTION_TYPES = [
   { v: 'music', t: 'Change the music' },
   { v: 'teleport', t: 'Teleport players' },
   { v: 'use', t: 'Use a map entity (door, lift, button...)' },
+  { v: 'give', t: 'Give players a weapon, health, armour, ammo or item' },
+  { v: 'heal', t: 'Heal players to full' },
+  { v: 'kill', t: 'Kill players' },
+  { v: 'knockdown', t: 'Knock players down' },
+  { v: 'freeze', t: 'Freeze players (can look, not move or shoot)' },
+  { v: 'vehicle', t: 'Spawn a vehicle' },
+  { v: 'pickup', t: 'Drop a pickup (medpack, weapon, ammo...)' },
+  { v: 'move', t: 'Give a group new orders (hunt, route, guard, idle)' },
+  { v: 'trigger_on', t: 'Turn a trigger on (and re-arm it)' },
+  { v: 'trigger_off', t: 'Turn a trigger off' },
+  { v: 'counter', t: 'Change a counter' },
+  { v: 'countdown', t: 'Start a countdown (on everyone\'s screen)' },
+  { v: 'objective', t: 'Complete a map objective' },
+  { v: 'texture', t: 'Swap a texture' },
+  { v: 'gravity', t: 'Change gravity' },
+  { v: 'speed', t: 'Change player speed' },
+  { v: 'addtime', t: 'Add time to the round clock' },
   { v: 'win', t: 'Win the round for a side (ends the scenario)' },
   { v: 'end', t: 'End the scenario' },
+];
+
+// Whom a player action is for.
+function whoSelect(a, t) {
+  const opts = [];
+  if (whenHasPlayer(t) || a.who === 'player') opts.push({ v: 'player', t: 'The player who set it off' });
+  opts.push({ v: 'all', t: 'Every player' }, { v: 'team1', t: 'Everyone on ' + S.teams.team1 }, { v: 'team2', t: 'Everyone on ' + S.teams.team2 });
+  S.scn.areas.forEach((ar) => opts.push({ v: ar.id, t: 'Everyone in area: ' + ar.name }));
+  if (!opts.some((o) => o.v === a.who)) a.who = opts[0].v;
+  return selectIn(a, 'who', opts);
+}
+
+// Lists loaded once, when first needed.
+const LISTS = {};
+async function loadList(key, url, field) {
+  if (!LISTS[key]) {
+    try { LISTS[key] = await api(url); } catch (e) { LISTS[key] = {}; }
+  }
+  return LISTS[key][field] || [];
+}
+function lateCombo(box, key, url, field, a, prop, placeholder, sub) {
+  loadList(key, url, field).then((list) => {
+    box.prepend(combo({ value: a[prop] || '', items: () => list.map((v) => (typeof v === 'string' ? { value: v, sub: sub ? sub(v) : '' } : v)),
+      placeholder: placeholder.replace('N', list.length), onPick: (v) => { a[prop] = v; soft(); }, onType: (v) => { a[prop] = v; soft(); } }));
+  });
+}
+const GIVE_EXTRAS = [
+  { value: 'health', sub: 'full health' }, { value: 'armor', sub: 'full armour' }, { value: 'ammo', sub: 'full ammo for what they carry' },
+  { value: 'item_jetpack', sub: 'jetpack (with fuel)' }, { value: 'item_shockfield', sub: 'shock field' },
+  { value: 'item_seeker', sub: 'seeker drone' }, { value: 'item_sentry_gun', sub: 'sentry gun' },
+  { value: 'item_shield', sub: 'portable shield' }, { value: 'item_medpac', sub: 'medpac' }, { value: 'item_stimpack', sub: 'stimpack' },
+  { value: 'item_cloak', sub: 'cloak' }, { value: 'item_eweb_holdable', sub: 'E-Web' },
 ];
 const whenHasPlayer = (t) => !!(WHENS.find((w) => w.v === t.when) || {}).player;
 
@@ -1145,6 +1209,16 @@ function actionRow(t, a, i) {
     if (a.do === 'tell') a.style = 'center';
     if (a.do === 'teleport') a.who = whenHasPlayer(t) ? 'player' : 'all';
     if (a.do === 'win') a.team = (S.scn.joinTeam && S.scn.joinTeam !== 'any') ? S.scn.joinTeam : 'team1';
+    if (['give', 'heal', 'kill', 'knockdown', 'freeze'].includes(a.do)) a.who = whenHasPlayer(t) ? 'player' : 'all';
+    if (a.do === 'knockdown') a.seconds = 3;
+    if (a.do === 'freeze') a.seconds = 5;
+    if (a.do === 'addtime') a.seconds = 120;
+    if (a.do === 'move') a.behaviour = 'hunt';
+    if (a.do === 'counter') { a.op = 'add'; a.value = 1; a.counter = (S.scn.counters[0] || {}).id || ''; }
+    if (a.do === 'countdown') { a.seconds = 30; a.text = ''; }
+    if (a.do === 'objective') { a.team = 'team1'; a.objective = 1; }
+    if (a.do === 'gravity') { a.value = 200; a.seconds = 30; }
+    if (a.do === 'speed') { a.value = 200; a.seconds = 30; }
     changed();
   } }, ACTION_TYPES.map((o) => h('option', { value: o.v, selected: o.v === a.do }, o.t)));
   row.append(h('div', { class: 'input-row' }, kind,
@@ -1200,6 +1274,83 @@ function actionRow(t, a, i) {
       ]), textIn(a, 'text', { maxlength: 190, placeholder: 'Big message as it ends (optional)' }),
       h('small', { class: 'muted' }, 'Ends the scenario, then the round - scores, round-over message and the next round, as if they\'d won it themselves.'));
       break;
+    case 'give': {
+      row.append(whoSelect(a, t));
+      const box = h('div', {}, h('small', { class: 'muted' }, 'A weapon (with ammo), health, armour, ammo, or an item by name.'));
+      const weapons = S.weapons.map((w) => ({ value: w, sub: 'weapon' }));
+      box.prepend(combo({ value: a.item || '', items: () => GIVE_EXTRAS.concat(weapons), placeholder: 'What to give - search', onPick: (v) => { a.item = v; soft(); }, onType: (v) => { a.item = v; soft(); } }));
+      row.append(box);
+      break;
+    }
+    case 'heal': case 'kill':
+      row.append(whoSelect(a, t));
+      break;
+    case 'knockdown': case 'freeze':
+      row.append(whoSelect(a, t), field(a.do === 'freeze' ? 'For (seconds)' : 'Down for (seconds)', numIn(a, 'seconds', { min: 0.5, max: 60, step: 0.5 })));
+      break;
+    case 'vehicle': {
+      const box = h('div', {});
+      lateCombo(box, 'veh', '/api/vehicles', 'vehicles', a, 'vehicle', 'Search N vehicles');
+      row.append(placeSelect(a, t), box);
+      break;
+    }
+    case 'pickup': {
+      const box = h('div', {}, h('small', { class: 'muted' }, 'Dropped on the floor there, as if someone dropped it.'));
+      lateCombo(box, 'veh', '/api/vehicles', 'items', a, 'item', 'Search N pickups (item_, weapon_, ammo_...)');
+      row.append(placeSelect(a, t), box);
+      break;
+    }
+    case 'addtime':
+      row.append(field('Seconds (negative takes time off)', numIn(a, 'seconds', { min: -3600, max: 3600 })));
+      break;
+    case 'move': {
+      const s2 = S.scn;
+      row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(s2.groups.map((g) => ({ v: g.id, t: g.name })))),
+        selectIn(a, 'behaviour', BEHAVIOURS));
+      if (a.behaviour === 'route') row.append(selectIn(a, 'route', [{ v: '', t: '- pick a route -' }].concat(s2.routes.map((r) => ({ v: r.id, t: r.name })))));
+      if (a.behaviour === 'guard') row.append(placeSelect(a, t, 'Where each of them spawned'));
+      break;
+    }
+    case 'trigger_on': case 'trigger_off':
+      row.append(selectIn(a, 'trigger', [{ v: '', t: '- pick a trigger -' }].concat(S.scn.triggers.filter((x) => x !== t).map((x) => ({ v: x.id, t: x.name })))));
+      break;
+    case 'counter':
+      row.append(h('div', { class: 'grid3' },
+        field('Counter', selectIn(a, 'counter', [{ v: '', t: '- pick -' }].concat(S.scn.counters.map((c) => ({ v: c.id, t: c.name }))))),
+        field('', selectIn(a, 'op', [{ v: 'add', t: 'add' }, { v: 'set', t: 'set to' }])),
+        field('', numIn(a, 'value', { min: -9999, max: 9999 }))));
+      if (!S.scn.counters.length) row.append(h('div', { class: 'warnline' }, 'Make a counter first (Counters, top of this tab).'));
+      break;
+    case 'countdown':
+      row.append(h('div', { class: 'grid-say' }, field('Seconds', numIn(a, 'seconds', { min: 1, max: 3600 })), field('Label', textIn(a, 'text', { maxlength: 90, placeholder: 'e.g. Reactor overload in' }))),
+        h('small', { class: 'muted' }, 'Ticks down on everyone\'s screen; "The countdown reaches zero" triggers fire at the end.'));
+      break;
+    case 'objective': {
+      const box = h('div', {});
+      loadList('obj', '/api/maps/' + encodeURIComponent(S.scn.map) + '/objectives', 'objectives').then((objs) => {
+        const opts = [];
+        ['team1', 'team2'].forEach((tm) => (objs[tm] || []).forEach((o) => opts.push({ v: tm + ':' + o.n, t: S.teams[tm] + ' - ' + o.name + (o.final ? ' (final)' : '') })));
+        const holder = { pick: a.team + ':' + a.objective };
+        if (!opts.length) opts.push({ v: holder.pick, t: 'This map lists no objectives' });
+        box.append(selectIn(holder, 'pick', opts, () => { const [tm, n] = holder.pick.split(':'); a.team = tm; a.objective = +n; changed(); }),
+          h('small', { class: 'muted' }, 'As if that side had done it - a final objective wins them the round.'));
+      });
+      row.append(box);
+      break;
+    }
+    case 'texture': {
+      const from = h('div', {}), to = h('div', {}, h('small', { class: 'muted' }, 'Any texture or shader path, e.g. one from another surface. Put back when the scenario ends.'));
+      lateCombo(from, 'shd', '/api/maps/' + encodeURIComponent(S.scn.map) + '/shaders', 'shaders', a, 'from', 'Texture on this map to swap (N)');
+      lateCombo(to, 'shd', '/api/maps/' + encodeURIComponent(S.scn.map) + '/shaders', 'shaders', a, 'to', 'Swap it for (search or type a path)');
+      row.append(from, to);
+      break;
+    }
+    case 'gravity': case 'speed':
+      row.append(h('div', { class: 'grid2' },
+        a.do === 'gravity' ? field('Gravity (normal 800, lower = floatier)', numIn(a, 'value', { min: 0, max: 5000 }))
+          : field('Speed, % of normal (50 = half, 200 = double)', numIn(a, 'value', { min: 10, max: 400 })),
+        field('For (seconds, 0 = till it ends)', numIn(a, 'seconds', { min: 0, max: 3600 }))));
+      break;
     case 'use': {
       const box = h('div', {});
       loadTargets().then((list) => {
@@ -1214,9 +1365,22 @@ function actionRow(t, a, i) {
   return row;
 }
 
+function renderCounters(el) {
+  const s = S.scn;
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-title' }, h('span', { class: 'tag' }, 'counters'),
+    h('span', { class: 'muted small' }, 'Numbers your triggers change and react to - keys found, waves cleared...')));
+  s.counters.forEach((c, i) => card.append(h('div', { class: 'input-row', style: 'margin-bottom:6px' },
+    textIn(c, 'name', { maxlength: 40, placeholder: 'name' }),
+    h('span', { class: 'muted small' }, 'starts at'), numIn(c, 'start', { min: -9999, max: 9999, style: 'max-width:90px' }),
+    h('button', { class: 'btn tiny danger', type: 'button', onclick: () => { s.counters.splice(i, 1); changed(); } }, 'x'))));
+  card.append(h('button', { class: 'btn small', onclick: () => { s.counters.push({ id: uid('c'), name: nextName(s.counters, 'Counter'), start: 0 }); changed(); } }, '+ Counter'));
+  el.append(card);
+}
+
 function renderTriggers(el) {
   const s = S.scn;
   el.append(h('p', { class: 'muted' }, 'When something happens, do things - in order, top to bottom.'));
+  renderCounters(el);
   s.triggers.forEach((t, i) => {
     const card = h('div', { class: 'card' },
       h('div', { class: 'card-title' }, h('span', { class: 'tag trigger' }, 'trigger'), textIn(t, 'name', { maxlength: 47, class: 'grow' })),
@@ -1228,6 +1392,10 @@ function renderTriggers(el) {
     if (t.when === 'group_dead') card.append(groupSel());
     if (t.when === 'group_left') card.append(h('div', { class: 'grid2' }, groupSel(), field('N or fewer left', numIn(t, 'count', { min: 0, max: 32 }))));
     if (t.when === 'players') card.append(field('Players in the game', numIn(t, 'count', { min: 1, max: 64 })));
+    if (t.when === 'counter') card.append(h('div', { class: 'grid3' },
+      field('Counter', selectIn(t, 'counter', [{ v: '', t: '- pick -' }].concat(s.counters.map((c) => ({ v: c.id, t: c.name }))))),
+      field('is', selectIn(t, 'compare', [{ v: '>=', t: 'at least' }, { v: '==', t: 'exactly' }, { v: '<=', t: 'at most' }])),
+      field('', numIn(t, 'count', { min: -9999, max: 9999 }))));
     if (t.when === 'after') {
       const others = [{ v: '', t: '- pick -' }].concat(s.triggers.filter((x) => x !== t).map((x) => ({ v: x.id, t: x.name })));
       card.append(h('div', { class: 'grid2' },
@@ -1240,6 +1408,8 @@ function renderTriggers(el) {
           h('option', { value: 'once', selected: !t.repeat }, 'Once'), h('option', { value: 'every', selected: !!t.repeat }, 'Every time'))),
         t.repeat ? field('No more often than (seconds)', numIn(t, 'cooldown', { min: 1, max: 3600 })) : h('span')));
     }
+    card.append(h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!t.startOff, onchange: (e) => { t.startOff = e.target.checked; changed(); } }),
+      h('span', { class: 'small' }, 'Starts turned off - another trigger turns it on')));
     const acts = h('div', { class: 'actions-list' });
     t.actions.forEach((a, j) => acts.append(actionRow(t, a, j)));
     card.append(h('div', { class: 'sub' }, 'Then'), acts,
@@ -1269,7 +1439,7 @@ function renderChecks(el) {
 // --- Load and save -----------------------------------------------------------
 
 function normalise(s) {
-  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters']) if (!Array.isArray(s[k])) s[k] = [];
   if (!s.joinTeam) s.joinTeam = 'any';
   if (!s.respawnSeconds) s.respawnSeconds = 5;
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });

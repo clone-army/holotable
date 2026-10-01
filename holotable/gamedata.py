@@ -470,3 +470,102 @@ WEAPONS = [
     "WP_DISRUPTOR", "WP_DEMP2", "WP_CONCUSSION", "WP_PLX1", "WP_ROCKET_LAUNCHER", "WP_THROWER",
     "WP_THERMAL", "WP_FRAG_NADE", "WP_CONC_NADE", "WP_CRYO_NADE", "WP_FIRE_NADE", "WP_PULSE_NADE", "WP_SONIC_NADE", "WP_REAL_TD",
 ]
+
+
+
+# --- Vehicles, pickups, a map's textures and objectives ----------------------
+
+_extra = {"sig": None}
+
+
+def _vehicles_and_items():
+    with _lock:
+        _refresh()
+        if _extra.get("sig") == _index["sig"]:
+            return _extra
+        vehicles = {}
+        for name in _pk3s():
+            try:
+                with zipfile.ZipFile(os.path.join(config.GAMEDATA, name)) as z:
+                    for info in z.infolist():
+                        low = info.filename.lower()
+                        if low.startswith("ext_data/npcs/") and low.endswith(".npc"):
+                            text = re.sub(r"//[^\n]*", "", z.read(info.filename).decode("latin1"))
+                            for m in re.finditer(r"([A-Za-z0-9_\-]+)\s*\{([^{}]*)\}", text):
+                                if re.search(r"CLASS_VEHICLE", m.group(2), re.I):
+                                    vehicles[m.group(1).lower()] = m.group(1)
+            except (zipfile.BadZipFile, OSError):
+                continue
+        # Pickups: the item classnames MBII's game module knows (its item list).
+        items = set()
+        so = os.path.join(config.GAMEDATA, "jampgamei386.so")
+        try:
+            with open(so, "rb") as f:
+                data = f.read()
+            for m in re.finditer(rb"(?<![A-Za-z0-9_])((?:item|weapon|ammo)_[a-z0-9_]{2,40})\x00", data):
+                items.add(m.group(1).decode())
+        except OSError:
+            pass
+        _extra.update(sig=_index["sig"], vehicles=sorted(vehicles.values(), key=str.lower), items=sorted(items))
+        return _extra
+
+
+def list_vehicles():
+    return _vehicles_and_items()["vehicles"]
+
+
+def list_items():
+    return _vehicles_and_items()["items"]
+
+
+def map_shaders(mapname):
+    """The textures the map's surfaces use (for texture swaps)."""
+    entry = find_map(mapname)
+    if not entry:
+        return []
+    data = _read_bsp(entry)
+    so, sl = struct.unpack_from("<ii", data, 8 + 8)
+    out = set()
+    for i in range(sl // 72):
+        name = data[so + i * 72: so + i * 72 + 64].split(b"\0")[0].decode("latin1")
+        if name and not any(k in name.lower() for k in ("noshader", "system/", "common/caulk", "common/nodraw")):
+            out.add(name)
+    return sorted(out, key=str.lower)
+
+
+def map_objectives(mapname):
+    """{"team1": [{"n": 1, "name": ...}], "team2": [...]} from maps/<map>.siege."""
+    with _lock:
+        _refresh()
+        hit = _index.get("sieges", {}).get(str(mapname or "").lower())
+    out = {"team1": [], "team2": []}
+    if not hit:
+        return out
+    try:
+        with zipfile.ZipFile(hit[0]) as z:
+            text = z.read(hit[1]).decode("latin1")
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return out
+    text = re.sub(r"//[^\n]*", "", text)
+    teams = map_teams(mapname)
+
+    def block_after(label):
+        m = re.search(r"(?m)^\s*" + re.escape(label) + r"\s*\{", text)
+        if not m:
+            return ""
+        depth, i = 0, m.end() - 1
+        while i < len(text):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                return text[m.end():i]
+            i += 1
+        return ""
+
+    for key in ("team1", "team2"):
+        body = block_after(teams[key])
+        for m in re.finditer(r"Objective(\d+)\s*\{([^{}]*)\}", body):
+            name = re.search(r'goalname\s+"([^"]*)"', m.group(2)) or re.search(r'objdesc\s+"([^"]*)"', m.group(2))
+            final = re.search(r"final\s+(\d)", m.group(2))
+            out[key].append({"n": int(m.group(1)), "name": name.group(1) if name else "Objective " + m.group(1),
+                             "final": bool(final and final.group(1) == "1")})
+    return out

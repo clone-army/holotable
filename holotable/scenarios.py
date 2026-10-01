@@ -18,9 +18,12 @@ _lock = threading.Lock()
 
 BEHAVIOURS = ("hunt", "route", "guard", "idle")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
-         "player_died", "npc_killed", "after")
+         "player_died", "npc_killed", "after", "counter", "countdown_end")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
-           "teleport", "use", "despawn", "win", "end")
+           "teleport", "use", "despawn", "win", "end",
+           "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move",
+           "trigger_on", "trigger_off", "counter", "countdown", "objective", "texture", "gravity", "speed")
+WHO_FIXED = ("player", "all", "team1", "team2")
 _NPC_NAME = re.compile(r"^HT_[A-Za-z0-9_]{1,40}$")
 
 
@@ -183,7 +186,7 @@ def clean(data):
         "joinTeam": data.get("joinTeam") if data.get("joinTeam") in ("any", "team1", "team2") else "any",
         "anytimeSpawn": bool(data.get("anytimeSpawn")),
         "respawnSeconds": int(max(1, min(60, _num(data.get("respawnSeconds"), 5)))),
-        "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
+        "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
     }
     for p in lst("points")[:64]:
         if isinstance(p, dict):
@@ -214,7 +217,7 @@ def clean(data):
             continue
         when = t.get("when") if t.get("when") in WHENS else "start"
         acts = []
-        for a in (t.get("actions") or [])[:8]:
+        for a in (t.get("actions") or [])[:16]:
             if not isinstance(a, dict) or a.get("do") not in ACTIONS:
                 continue
             d = a["do"]
@@ -249,6 +252,42 @@ def clean(data):
                 act["who"] = "all" if a.get("who") == "all" else "player"
             elif d == "use":
                 act["target"] = _text(a.get("target"), 63)
+            elif d in ("give", "knockdown", "kill", "heal", "freeze"):
+                act["who"] = _text(a.get("who") or "player", 39)
+                if d == "give":
+                    act["item"] = _text(a.get("item"), 63)
+                if d in ("knockdown", "freeze"):
+                    act["seconds"] = round(max(0.5, min(60, _num(a.get("seconds"), 3))), 1)
+            elif d in ("vehicle", "pickup"):
+                act["at"] = _text(a.get("at"), 39)
+                act["vehicle" if d == "vehicle" else "item"] = _text(a.get("vehicle" if d == "vehicle" else "item"), 63)
+            elif d == "addtime":
+                act["seconds"] = int(max(-3600, min(3600, _num(a.get("seconds"), 60))))
+            elif d == "move":
+                act["group"] = _text(a.get("group"), 39)
+                act["behaviour"] = a.get("behaviour") if a.get("behaviour") in BEHAVIOURS else "hunt"
+                act["route"] = _text(a.get("route"), 39)
+                act["at"] = _text(a.get("at"), 39)
+            elif d in ("trigger_on", "trigger_off"):
+                act["trigger"] = _text(a.get("trigger"), 39)
+            elif d == "counter":
+                act["counter"] = _text(a.get("counter"), 39)
+                act["op"] = "set" if a.get("op") == "set" else "add"
+                act["value"] = int(max(-9999, min(9999, _num(a.get("value"), 1))))
+            elif d == "countdown":
+                act["seconds"] = int(max(1, min(3600, _num(a.get("seconds"), 30))))
+                act["text"] = _text(a.get("text"), 90)
+            elif d == "objective":
+                act["team"] = "team2" if a.get("team") == "team2" else "team1"
+                act["objective"] = int(max(1, min(32, _num(a.get("objective"), 1))))
+            elif d == "texture":
+                act["from"] = _text(a.get("from"), 95)
+                act["to"] = _text(a.get("to"), 95)
+            elif d in ("gravity", "speed"):
+                # gravity: the g_gravity value (normal 800); speed: % of normal
+                act["value"] = (int(max(0, min(5000, _num(a.get("value"), 800)))) if d == "gravity"
+                                else int(max(10, min(400, _num(a.get("value"), 200)))))
+                act["seconds"] = int(max(0, min(3600, _num(a.get("seconds"), 0))))
             elif d == "win":
                 act["team"] = a.get("team") if a.get("team") in ("team1", "team2", "draw") else "team1"
                 act["text"] = _text(a.get("text"), 190)
@@ -259,10 +298,17 @@ def clean(data):
             "id": _text(t.get("id"), 39), "name": _text(t.get("name"), 47), "when": when,
             "area": _text(t.get("area"), 39), "group": _text(t.get("group"), 39), "trigger": _text(t.get("trigger"), 39),
             "seconds": round(max(0, min(3600, _num(t.get("seconds"), 0))), 1),
-            "count": int(max(0, min(64, _num(t.get("count"), 0)))),
+            "count": int(max(-9999, min(9999, _num(t.get("count"), 0)))),
+            "counter": _text(t.get("counter"), 39),
+            "compare": t.get("compare") if t.get("compare") in (">=", "==", "<=") else ">=",
+            "startOff": bool(t.get("startOff")),
             "repeat": bool(t.get("repeat")), "cooldown": round(max(1, min(3600, _num(t.get("cooldown"), 5))), 1),
             "actions": acts,
         })
+    for c in lst("counters")[:16]:
+        if isinstance(c, dict) and c.get("id"):
+            out["counters"].append({"id": _text(c.get("id"), 39), "name": _text(c.get("name"), 40),
+                                    "start": int(max(-9999, min(9999, _num(c.get("start"), 0))))})
     for n in lst("npcTypes")[:24]:
         if not isinstance(n, dict):
             continue

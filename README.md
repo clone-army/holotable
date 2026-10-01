@@ -104,7 +104,10 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   a player walks in); `all_in_area` (`area` - every player is in it);
   `group_dead` (`group`); `group_left` (`group`, `count` or fewer left);
   `all_dead`; `npc_killed` (any scenario NPC); `player_died`; `players`
-  (`count` or more in the game); `after` (`trigger`, `seconds` later).
+  (`count` or more in the game); `after` (`trigger`, `seconds` later);
+  `counter` (`counter`, `compare` `>=` / `==` / `<=`, `count`); `countdown_end`.
+  A trigger with `startOff` waits for a `trigger_on`.
+- `counters`: `[{ "id", "name", "start" }]` - numbers triggers change and test.
 - `repeat`: `false` fires once; `true` fires every time, no more often than
   `cooldown` seconds (a repeating `timer` goes off every `seconds`). Conditions
   fire as they become true.
@@ -121,6 +124,20 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   - `teleport` (`at`, `who` `player` or `all`)
   - `use` (`target`) - sets off the map's own entities with that targetname,
     as a button would: doors, lifts, relays
+  - player actions, each with `who` - `player` (who set it off), `all`, `team1`,
+    `team2` or an area id (everyone in it): `give` (`item`: a weapon `WP_...`,
+    `health`, `armor`, `ammo`, or an item classname like `item_jetpack`),
+    `heal`, `kill`, `knockdown` and `freeze` (`seconds`)
+  - `vehicle` (`vehicle`, `at`) and `pickup` (`item` classname, `at`)
+  - `move` (`group`, `behaviour`, `route` / `at`) - new orders for a group
+  - `trigger_on` / `trigger_off` (`trigger`) - turning on also re-arms it
+  - `counter` (`counter`, `op` `add` or `set`, `value`); `countdown`
+    (`seconds`, `text`) - shown on everyone's screen
+  - `objective` (`team`, `objective` number from the map's `.siege`) - completes
+    the map's own objective; `texture` (`from`, `to` shaders) - swapped back at
+    the end; `gravity` (`value`, normal 800) and `speed` (`value`, % of normal
+    ground speed) for `seconds` (0 = till the end);
+    `addtime` (`seconds` on or off the round clock)
   - `win` (`team`: `team1`, `team2` or `draw`, optional `text`) - ends the
     scenario, then the round, as if that side had won it
   - `music` (`path`), `end` (optional `text`)
