@@ -1195,7 +1195,8 @@ function foldBar(ids, what) {
 const nameOf = (list, id) => ((list.find((x) => x.id === id) || {}).name || '?');
 function npcSummary(n) {
   return [(n.model || '?') + ' / ' + (n.skin || 'default'), (n.weapon || '').replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase(),
-    n.health + ' health' + (n.armor ? ', ' + n.armor + ' armour' : ''), 'skill ' + n.skill].concat(n.peaceful ? ['peaceful'] : []).join(' \u00B7 ');
+    n.health + ' health' + (n.armor ? ', ' + n.armor + ' armour' : ''), 'skill ' + n.skill]
+    .concat(n.weapon === 'WP_SABER' && (n.saber || n.saber2) ? [[n.saber, n.saber2].filter(Boolean).join(' + ')] : [], n.peaceful ? ['peaceful'] : []).join(' \u00B7 ');
 }
 function groupSummary(g) {
   const who = g.npcs.length ? g.npcs.join(', ') : 'no NPC types';
@@ -1260,7 +1261,7 @@ function renderNpcs(el) {
       h('div', { class: 'grid2' }, field('Model', modelIn), field('Skin', skinSel)),
       h('div', { class: 'grid2' }, field('Weapon', selectIn(n, 'weapon', S.weapons.map((w) => ({ v: w, t: w.replace(/^WP_/, '').replace(/_/g, ' ').toLowerCase() }))), n.weapon === 'WP_SABER' ? 'Saber NPCs are experimental.' : null),
         field('Fires', h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!n.altFire, onchange: (e) => { n.altFire = e.target.checked; soft(); } }), ' alt fire'))),
-      n.weapon === 'WP_SABER' ? field('Saber colour', selectIn(n, 'saberColor', SABER_COLORS.map((c) => ({ v: c, t: c })))) : null,
+      n.weapon === 'WP_SABER' ? saberFields(n) : null,
       h('div', { class: 'grid3' }, field('Health', numIn(n, 'health', { min: 1, max: 5000 })), field('Armour', numIn(n, 'armor', { min: 0, max: 1000 })), field('Size %', numIn(n, 'scale', { min: 40, max: 250 }))),
       h('div', { class: 'grid2' }, field('Skill', selectIn(n, 'skill', [1, 2, 3, 4, 5].map((k) => ({ v: k, t: ['', '1 - raw recruit', '2 - poor', '3 - average', '4 - veteran', '5 - elite'][k] })))),
         field('Run speed', numIn(n, 'runSpeed', { min: 50, max: 400 }))),
@@ -1277,6 +1278,40 @@ function renderNpcs(el) {
     s.npcTypes.push({ name: npcName, model: 'stormtrooper', skin: 'default', weapon: 'WP_BLASTER', altFire: false, health: 100, armor: 0, scale: 100, skill: 3, runSpeed: 210, saberColor: 'blue' });
     changed();
   } }, '+ New NPC type'));
+}
+
+// A saber NPC type's hilt(s) - any of the game's saber definitions: the
+// MagnaGuard's electrostaff, Grievous' two-bladed pair, staffs... - colours
+// and style.
+const SABER_STYLES = [
+  { v: 0, t: 'From the saber(s)' }, { v: 1, t: 'Fast (blue)' }, { v: 2, t: 'Medium (yellow)' },
+  { v: 3, t: 'Strong (red)' }, { v: 4, t: 'Desann' }, { v: 5, t: 'Tavion' },
+];
+function saberFields(n) {
+  const box = h('div', {});
+  const colours = SABER_COLORS.map((c) => ({ v: c, t: c }));
+  loadList('sabers', '/api/sabers', 'sabers').then((sabers) => {
+    const items = () => sabers.map((s) => ({ value: s.id, sub: s.name + ' \u00B7 ' + s.kind + (s.blades > 1 ? ', ' + s.blades + ' blades' : '') }));
+    const known = (id) => sabers.find((s) => s.id.toLowerCase() === String(id || '').toLowerCase());
+    const hint = (id) => { const s = known(id); return s ? s.name + ' - ' + s.kind + (s.blades > 1 ? ', ' + s.blades + ' blades' : '') : (id ? 'Not a saber the game has' : ''); };
+    const staff = (known(n.saber) || {}).kind === 'staff';
+    box.append(
+      h('div', { class: 'grid2' },
+        field('Saber', combo({ value: n.saber || '', items, placeholder: 'Plain single saber - search ' + sabers.length,
+          onPick: (v) => { n.saber = v; changed(); }, onType: (v) => { n.saber = v.replace(/[^\w\-]/g, ''); soft(); } }), hint(n.saber)),
+        field('Colour', selectIn(n, 'saberColor', colours))),
+      h('div', { class: 'grid2' },
+        field('Second saber (optional)', combo({ value: n.saber2 || '', items, placeholder: 'None - search ' + sabers.length,
+          onPick: (v) => { n.saber2 = v; changed(); }, onType: (v) => { n.saber2 = v.replace(/[^\w\-]/g, ''); soft(); } }),
+          n.saber2 ? hint(n.saber2) : 'One in each hand - they fight dual.'),
+        n.saber2 ? field('Its colour', selectIn(n, 'saber2Color', colours)) : h('div', {})),
+      n.saber2 ? h('div', { class: 'row-end' }, h('button', { class: 'btn tiny', type: 'button', onclick: () => { n.saber2 = ''; changed(); } }, 'No second saber')) : null,
+      n.saber2 || staff ? h('small', { class: 'muted', style: 'display:block;margin-bottom:10px' }, n.saber2 ? 'Two sabers: they fight dual.' : 'A staff: they fight staff.')
+        : field('Style', selectIn(n, 'saberStyle', SABER_STYLES)),
+      h('small', { class: 'muted', style: 'display:block;margin-bottom:10px' },
+        'E.g. a MagnaGuard: model magnaguard, saber electrostaff. Grievous: model grievous4, sabers grievb4 and grievg4.'));
+  });
+  return box;
 }
 
 function npcChips(g) {
@@ -1830,7 +1865,11 @@ function normalise(s) {
   if (!s.respawnSeconds) s.respawnSeconds = 5;
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });
   s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; if (!g.attacks) g.attacks = 'all'; });
-  s.npcTypes.forEach((n) => { if (!n.saberColor) n.saberColor = 'blue'; });
+  s.npcTypes.forEach((n) => {
+    if (!n.saberColor) n.saberColor = 'blue';
+    if (!n.saber2Color) n.saber2Color = 'red';
+    if (n.saberStyle === undefined) n.saberStyle = 0;
+  });
   s.triggers.forEach((t) => { if (!Array.isArray(t.actions)) t.actions = []; });
   s.triggers.forEach((t) => t.actions.forEach((a) => {
     if (a.do === 'spawn' && !a.at) {

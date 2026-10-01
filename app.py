@@ -225,6 +225,12 @@ def api_map_classes(name):
     return ok(classes=gamedata.map_classes(name, team1, team2))
 
 
+@app.route("/api/sabers")
+@login_required
+def api_sabers():
+    return ok(sabers=gamedata.sabers())
+
+
 @app.route("/api/teams")
 @login_required
 def api_teams():

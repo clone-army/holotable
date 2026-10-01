@@ -743,6 +743,48 @@ def _config_classes(config_name, mbtc, mbch, zips):
     return out
 
 
+_sabers = {"sig": None, "list": None}
+_SABER_TYPES = {"SABER_STAFF": "staff", "SABER_SINGLE": "single", "SABER_DAGGER": "dagger", "SABER_BROAD": "broad",
+                "SABER_PRONG": "prong", "SABER_ARC": "arc", "SABER_SAI": "sai", "SABER_CLAW": "claw",
+                "SABER_LANCE": "lance", "SABER_STAR": "star", "SABER_TRIDENT": "trident", "SABER_SITH_SWORD": "sword"}
+
+
+def sabers():
+    """Every saber (hilt) definition in the game's ext_data/sabers/*.sab -
+    what an NPC's "saber" / "saber2" names: [{"id", "name", "kind",
+    "blades"}], by id. Later pk3s win, as in the game."""
+    with _lock:
+        _refresh()
+        if _sabers["sig"] == _index["sig"] and _sabers["list"] is not None:
+            return _sabers["list"]
+    found = {}
+    for name in _pk3s():
+        path = os.path.join(config.GAMEDATA, name)
+        try:
+            with zipfile.ZipFile(path) as z:
+                for member in z.namelist():
+                    low = member.lower()
+                    if not (low.startswith("ext_data/sabers/") and low.endswith(".sab")):
+                        continue
+                    text = _read_member(z, member)
+                    for sid, body in re.findall(r'([^\s{}"]+)\s*\{([^{}]*)\}', text):
+                        title = re.search(r'\bname\s+"([^"]*)"', body, re.I)
+                        kind = re.search(r"\bsaberType\s+(\w+)", body, re.I)
+                        blades = re.search(r"\bnumBlades\s+(\d+)", body, re.I)
+                        found[sid.lower()] = {
+                            "id": sid,
+                            "name": title.group(1).strip() if title and title.group(1).strip() else sid,
+                            "kind": _SABER_TYPES.get(kind.group(1).upper(), kind.group(1).lower()) if kind else "single",
+                            "blades": int(blades.group(1)) if blades else 1,
+                        }
+        except (zipfile.BadZipFile, OSError):
+            continue
+    out = sorted(found.values(), key=lambda s: s["id"].lower())
+    with _lock:
+        _sabers.update(sig=_index["sig"], list=out)
+    return out
+
+
 def team_configs():
     """Every team config the game has (the ones g_siegeTeam1/2 can swap in,
     with nothing for players to download): [{"id", "classes": "A, B, C"}],

@@ -352,6 +352,13 @@ def clean(data):
             "skill": int(max(1, min(5, _num(n.get("skill"), 3)))),
             "runSpeed": int(max(50, min(400, _num(n.get("runSpeed"), 210)))),
             "saberColor": n.get("saberColor") if n.get("saberColor") in SABER_COLORS else "blue",
+            # The hilt(s): any of the game's saber definitions ("" = a plain single saber, no second).
+            "saber": re.sub(r"[^\w\-]", "", str(n.get("saber") or ""))[:47],
+            "saber2": re.sub(r"[^\w\-]", "", str(n.get("saber2") or ""))[:47],
+            "saber2Color": n.get("saber2Color") if n.get("saber2Color") in SABER_COLORS else "red",
+            # Single-saber style, 1-5 (fast, medium, strong, Desann, Tavion); 0 = the saber's own.
+            # Two sabers fight dual and a staff hilt staff by themselves.
+            "saberStyle": int(max(0, min(5, _num(n.get("saberStyle"), 0)))),
             "peaceful": bool(n.get("peaceful")),
         })
     return out
@@ -379,9 +386,14 @@ def _npc_block(n):
     if n["altFire"]:
         lines.append("\taltFire\t\t1")
     if n["weapon"] == "WP_SABER":
-        lines.append("\tsaber\t\tsingle_1")
+        lines.append("\tsaber\t\t{}".format(n.get("saber") or "single_1"))
         # Types saved before the colour option have none: blue, as the editor shows them.
         lines.append("\tsaberColor\t{}".format(n.get("saberColor") if n.get("saberColor") in SABER_COLORS else "blue"))
+        if n.get("saber2"):
+            lines.append("\tsaber2\t\t{}".format(n["saber2"]))
+            lines.append("\tsaber2Color\t{}".format(n.get("saber2Color") if n.get("saber2Color") in SABER_COLORS else "red"))
+        if n.get("saberStyle"):
+            lines.append("\tsaberStyle\t{}".format(n["saberStyle"]))
     lines += [
         "\thealth\t\t{}".format(n["health"]),
         "\tarmor\t\t{}".format(n["armor"]),
