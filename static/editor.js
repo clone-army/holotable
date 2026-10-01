@@ -570,10 +570,7 @@ function validate() {
   for (const g of s.groups) {
     const nm = g.name || 'a group';
     if (!g.npcs.length && !g.leader) add('error', 'Group "' + nm + '" has no NPC types.', { tab: 'groups' });
-    // Somewhere to spawn: its own place, unless every Spawn action for it picks one.
-    const ownPlace = pointIds.has(g.spawn) || routeIds.has(g.spawn);
-    const needsOwn = g.spawnAtStart || s.triggers.some((t) => t.actions.some((a) => a.do === 'spawn' && a.group === g.id && !a.at));
-    if (!ownPlace && needsOwn) add('error', 'Group "' + nm + '" has nowhere to spawn - pick its Spawns at place' + (g.spawnAtStart ? ' (it spawns at the start).' : ', or a place on every Spawn action for it.'), { tab: 'groups' });
+    if (g.spawnAtStart && !pointIds.has(g.spawn) && !routeIds.has(g.spawn)) add('error', 'Group "' + nm + '" spawns at the start - pick where (Spawns at).', { tab: 'groups' });
     if (g.behaviour === 'route' && !routeIds.has(g.route)) add('warn', 'Group "' + nm + '" walks a route but none is picked - it will just hunt.', { tab: 'groups' });
     if (!spawned.has(g.id) && !g.spawnAtStart) add('warn', 'Group "' + nm + '" is never spawned - tick "Spawn when the scenario starts", or spawn it from a trigger.', { tab: 'groups' });
     if (s.joinTeam && s.joinTeam !== 'any' && g.attacks && g.attacks !== 'all' && g.attacks !== s.joinTeam)
@@ -610,6 +607,7 @@ function validate() {
       if (a.do === 'texture' && (!a.from || !a.to)) add('error', 'Trigger "' + nm + '": pick both textures for the swap.', { tab: 'triggers' });
       if (a.who === 'player' && !hasPlayer && ['give', 'heal', 'kill', 'knockdown', 'freeze'].includes(a.do)) add('warn', 'Trigger "' + nm + '": "the player who set it off" - this trigger isn\'t set off by one player.', { tab: 'triggers' });
       if (a.do === 'spawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Spawn action has no group.', { tab: 'triggers' });
+      if (a.do === 'spawn' && !pointIds.has(a.at) && !routeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where the group spawns.', { tab: 'triggers' });
       if (a.do === 'say' && !a.text && !a.path) add('warn', 'Trigger "' + nm + '": a Say action is empty.', { tab: 'triggers' });
     });
   }
@@ -1015,16 +1013,17 @@ function renderGroups(el) {
   const s = S.scn;
   el.append(h('p', { class: 'muted' }, 'Groups of NPCs, spawned by a trigger\'s Spawn action. They and the players can hurt each other.'));
   s.groups.forEach((g, i) => {
-    const spawnOpts = [{ v: '', t: '- none (each Spawn action says where) -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.routes.map((r) => ({ v: r.id, t: 'Route: ' + r.name + ' (along it)' })));
+    const spawnOpts = [{ v: '', t: '- pick -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.routes.map((r) => ({ v: r.id, t: 'Route: ' + r.name + ' (along it)' })));
     const card = h('div', { class: 'card' },
       h('div', { class: 'card-title' }, h('span', { class: 'tag group' }, 'group'), textIn(g, 'name', { maxlength: 47, class: 'grow' })),
       field('NPC types', npcChips(g), 'Spawned in turn. Up to 8.'),
       field('Leader (optional)', combo({ value: g.leader, items: npcItems, placeholder: 'spawns first, once - search NPC types',
         onPick: (v) => { g.leader = v; changed(); }, onType: (v) => { g.leader = v; soft(); } })),
       h('div', { class: 'grid3' }, field('How many', numIn(g, 'count', { min: 0, max: 32 })), field('+ per player', numIn(g, 'perPlayer', { min: 0, max: 8 })), field('At most', numIn(g, 'max', { min: 1, max: 32 }))),
-      field('Spawns at', selectIn(g, 'spawn', spawnOpts), 'Its own spawn place - a Spawn action can pick somewhere else instead.'),
       h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!g.spawnAtStart, onchange: (e) => { g.spawnAtStart = e.target.checked; changed(); } }),
         h('span', {}, 'Spawn when the scenario starts (no trigger needed)')),
+      g.spawnAtStart ? field('Spawns at', selectIn(g, 'spawn', spawnOpts), 'Where it appears as the scenario starts.')
+        : h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' }, 'Otherwise a trigger spawns it, and its Spawn action says where.'),
       field('Behaviour', selectIn(g, 'behaviour', BEHAVIOURS)),
       field('Attacks', selectIn(g, 'attacks', [
         { v: 'all', t: 'Everyone (hostile to all)' },
@@ -1040,7 +1039,7 @@ function renderGroups(el) {
     el.append(card);
   });
   el.append(h('button', { class: 'btn primary', onclick: () => {
-    s.groups.push({ id: uid('g'), name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: s.points[0] ? s.points[0].id : '', behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
+    s.groups.push({ id: uid('g'), name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
     changed();
   } }, '+ New group'));
 }
@@ -1233,7 +1232,7 @@ function actionRow(t, a, i) {
   const groupSel = () => selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name }))));
   switch (a.do) {
     case 'spawn':
-      row.append(groupSel(), selectIn(a, 'at', [{ v: '', t: 'At the group\'s own spawn place' }]
+      row.append(groupSel(), selectIn(a, 'at', [{ v: '', t: '- pick where they spawn -' }]
         .concat(S.scn.points.map((p) => ({ v: p.id, t: 'At point: ' + p.name })), S.scn.routes.map((r) => ({ v: r.id, t: 'Along route: ' + r.name })))));
       break;
     case 'despawn':
@@ -1431,7 +1430,7 @@ function renderTriggers(el) {
   el.append(h('button', { class: 'btn primary', onclick: () => {
     s.triggers.push({ id: uid('t'), name: nextName(s.triggers, 'Trigger'), when: s.triggers.length ? 'all_dead' : 'start', area: '', group: '', trigger: '', seconds: 0,
       count: 0, repeat: false, cooldown: 5,
-      actions: [s.groups[0] ? { do: 'spawn', group: s.groups[0].id } : { do: 'center', text: '' }] });
+      actions: [s.groups[0] ? { do: 'spawn', group: s.groups[0].id, at: s.points[0] ? s.points[0].id : '' } : { do: 'center', text: '' }] });
     changed();
   } }, '+ New trigger'));
 }
@@ -1455,6 +1454,12 @@ function normalise(s) {
   s.routes.forEach((r) => { if (!Array.isArray(r.points)) r.points = []; });
   s.groups.forEach((g) => { if (!Array.isArray(g.npcs)) g.npcs = []; if (!g.attacks) g.attacks = 'all'; });
   s.triggers.forEach((t) => { if (!Array.isArray(t.actions)) t.actions = []; });
+  s.triggers.forEach((t) => t.actions.forEach((a) => {
+    if (a.do === 'spawn' && !a.at) {
+      const g = s.groups.find((x) => x.id === a.group);
+      if (g && g.spawn) a.at = g.spawn;
+    }
+  }));
   return s;
 }
 
