@@ -27,7 +27,7 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   change**. Groups can also use any NPC type the game already has.
 - **Groups.** Which NPC types, how many (scaling with players if you like), a
   leader, where they spawn (a point, or along a route), how they behave -
-  *hunt*, *route* (walk a route, fight whoever comes close), *guard* (hold the
+  *hunt*, *route* (walk or run a route, fight whoever comes close), *guard* (hold the
   spawn) or *idle* - and who they attack: everyone, or one side only (they
   fight for the other - allies for the players on it).
 - **Triggers.** When: the start, a timer, a player entering an area, a group
@@ -131,7 +131,7 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
     `health`, `armor`, `ammo`, or an item classname like `item_jetpack`),
     `heal`, `kill`, `knockdown` and `freeze` (`seconds`)
   - `vehicle` (`vehicle`, `at`) and `pickup` (`item` classname, `at`)
-  - `move` (`group`, `behaviour`, `route` / `at`) - new orders for a group
+  - `move` (`group`, `behaviour`, `route` + `pace` / `at`) - new orders for a group
   - `trigger_on` / `trigger_off` (`trigger`) - turning on also re-arms it
   - `counter` (`counter`, `op` `add` or `set`, `value`); `countdown`
     (`seconds`, `text`) - shown on everyone's screen
@@ -149,8 +149,9 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 - `attacks`: `all` (hostile to everyone), or `team1` / `team2` - only that
   side; the group fights for the other one, leaves its players alone, and
   fights groups on the opposite side.
-- `behaviour`: `hunt`, `route`, `guard`, `idle`. `engage` is how close a
-  player comes before a route walker or guard goes for them.
+- `behaviour`: `hunt`, `route`, `guard`, `idle`. `routePace` is `walk`
+  (default) or `run`. `engage` is how close a player comes before a route
+  walker or guard goes for them.
 - Coordinates are the game's own (as `/viewpos` shows); `z` is the floor.
 
 ## The server side

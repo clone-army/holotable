@@ -1081,6 +1081,7 @@ const BEHAVIOURS = [
   { v: 'guard', t: 'Guard - hold where they spawned, fight anyone close' },
   { v: 'idle', t: 'Idle - stand about (fight only if attacked)' },
 ];
+const PACES = [{ v: 'walk', t: 'Walking' }, { v: 'run', t: 'Running' }];
 
 function renderGroups(el) {
   const s = S.scn;
@@ -1107,6 +1108,7 @@ function renderGroups(el) {
         ? 'Players on the other side (and NPCs fighting for it) are left alone - groups on opposite sides fight each other.'
         : 'Pick a side to make them allies of the other one.'),
       g.behaviour === 'route' ? field('Route to walk', selectIn(g, 'route', [{ v: '', t: '- pick -' }].concat(s.routes.map((r) => ({ v: r.id, t: r.name }))))) : null,
+      g.behaviour === 'route' ? field('Pace', selectIn(g, 'routePace', PACES), 'Walking or running round the route. Once they go after a player they run either way.') : null,
       (g.behaviour === 'route' || g.behaviour === 'guard') ? field('Engage range', numIn(g, 'engage', { min: 0, max: 4096, placeholder: g.behaviour === 'guard' ? '600' : '350' }), 'How close a player comes before they go for them (0 = default).') : null,
       h('div', { class: 'row-end' },
         h('button', { class: 'btn small', title: 'A copy of this group, right below it - change what you need', onclick: () => {
@@ -1128,7 +1130,7 @@ function renderGroups(el) {
   el.append(h('button', { class: 'btn primary', onclick: () => {
     const gid = uid('g');
     openCard(gid);
-    s.groups.push({ id: gid, name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', engage: 0, attacks: 'all' });
+    s.groups.push({ id: gid, name: nextName(s.groups, 'Group'), npcs: [], leader: '', count: 3, perPlayer: 1, max: 12, spawn: '', spawnAtStart: false, behaviour: 'hunt', route: '', routePace: 'walk', engage: 0, attacks: 'all' });
     changed();
   } }, '+ New group'));
 }
@@ -1411,7 +1413,7 @@ function actionRow(t, a, i) {
       const s2 = S.scn;
       row.append(selectIn(a, 'group', [{ v: '', t: '- pick a group -' }].concat(s2.groups.map((g) => ({ v: g.id, t: g.name })))),
         selectIn(a, 'behaviour', BEHAVIOURS));
-      if (a.behaviour === 'route') row.append(selectIn(a, 'route', [{ v: '', t: '- pick a route -' }].concat(s2.routes.map((r) => ({ v: r.id, t: r.name })))));
+      if (a.behaviour === 'route') row.append(selectIn(a, 'route', [{ v: '', t: '- pick a route -' }].concat(s2.routes.map((r) => ({ v: r.id, t: r.name })))), selectIn(a, 'pace', PACES));
       if (a.behaviour === 'guard') row.append(placeSelect(a, t, 'Where each of them spawned'));
       break;
     }

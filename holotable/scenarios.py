@@ -210,6 +210,7 @@ def clean(data):
                 "perPlayer": int(max(0, min(8, _num(g.get("perPlayer"), 0)))), "max": int(max(1, min(32, _num(g.get("max"), 20)))),
                 "spawn": _text(g.get("spawn"), 39), "spawnAtStart": bool(g.get("spawnAtStart")),
                 "behaviour": b, "route": _text(g.get("route"), 39),
+                "routePace": "run" if g.get("routePace") == "run" else "walk",
                 "engage": int(max(0, min(4096, _num(g.get("engage"), 0)))),
                 "attacks": g.get("attacks") if g.get("attacks") in ("all", "team1", "team2") else "all",
             })
@@ -270,6 +271,7 @@ def clean(data):
                 act["group"] = _text(a.get("group"), 39)
                 act["behaviour"] = a.get("behaviour") if a.get("behaviour") in BEHAVIOURS else "hunt"
                 act["route"] = _text(a.get("route"), 39)
+                act["pace"] = "run" if a.get("pace") == "run" else "walk"
                 act["at"] = _text(a.get("at"), 39)
             elif d in ("trigger_on", "trigger_off"):
                 act["trigger"] = _text(a.get("trigger"), 39)
