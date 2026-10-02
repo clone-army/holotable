@@ -74,7 +74,7 @@ def listing():
         out.append({
             "id": sid, "name": s.get("name", sid), "map": s.get("map", ""), "description": s.get("description", ""),
             "updated": s.get("updated", 0), "updatedBy": s.get("updatedBy", ""),
-            "owner": owner_of(s),
+            "owner": owner_of(s), "folder": s.get("folder", "") or "",
             "groups": len(s.get("groups", []) or []), "triggers": len(s.get("triggers", []) or []),
         })
     return out
@@ -87,6 +87,23 @@ def owner_of(data):
 def can_see(data, user):
     """Admins see every scenario; editors their own."""
     return user["role"] == "admin" or owner_of(data).lower() == user["username"].lower()
+
+
+def clean_folder(folder):
+    """A folder name: "Cantina" or nested, "Cantina/Raids" - just for sorting
+    scenarios on the site (servers don't look at it). "" = none."""
+    parts = [re.sub(r"[^\w \-'.,()&!]", "", p).strip()[:40] for p in str(folder or "").split("/")]
+    return "/".join(p for p in parts if p)[:80]
+
+
+def set_folder(sid, folder):
+    """Moves a scenario into a folder (not counted as an edit)."""
+    folder = clean_folder(folder)
+    with _lock:
+        data = load(sid)
+        data["folder"] = folder
+        _write(sid, data)
+    return folder
 
 
 def set_owner(sid, owner):
@@ -114,13 +131,15 @@ def _write(sid, data):
     os.replace(tmp, path)
 
 
-def create(name, mapname, author):
+def create(name, mapname, author, folder=""):
     with _lock:
         base = _slug(name)
         sid = base
         while os.path.exists(_path(sid)):
             sid = "{}_{}".format(base, secrets.token_hex(2))
-        _write(sid, blank(name, mapname, author))
+        data = blank(name, mapname, author)
+        data["folder"] = clean_folder(folder)
+        _write(sid, data)
     return sid
 
 
@@ -475,6 +494,7 @@ def save(sid, data, author):
         cleaned["created"] = old.get("created", int(time.time()))
         cleaned["createdBy"] = old.get("createdBy", author)
         cleaned["owner"] = owner_of(old) or author
+        cleaned["folder"] = old.get("folder", "") or ""  # only moved from the list, never by the editor
         cleaned["updated"] = int(time.time())
         cleaned["updatedBy"] = author
         # NPC type names are shared by every scenario on the server.

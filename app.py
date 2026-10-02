@@ -108,8 +108,28 @@ def logout():
 def index():
     me = current_user()
     visible = [s for s in scenarios.listing() if me["role"] == "admin" or s["owner"].lower() == me["username"].lower()]
-    return render_template("index.html", scenarios=visible, maps=gamedata.list_maps(),
-                           usernames=[u["username"] for u in users.listing()])
+
+    def by_folder(items):
+        """[(folder, [scenarios newest first])], folders A-Z, no folder last."""
+        folders = {}
+        for s in items:
+            folders.setdefault(s["folder"], []).append(s)
+        order = sorted((f for f in folders if f), key=str.lower) + ([""] if "" in folders else [])
+        return [(f, sorted(folders[f], key=lambda s: s["updated"], reverse=True)) for f in order]
+
+    mine = [s for s in visible if s["owner"].lower() == me["username"].lower()]
+    owners = {}
+    for s in visible:
+        if s["owner"].lower() != me["username"].lower():
+            owners.setdefault(s["owner"] or "(nobody)", []).append(s)
+    return render_template(
+        "index.html", scenarios=visible, maps=gamedata.list_maps(),
+        usernames=[u["username"] for u in users.listing()],
+        mine=by_folder(mine), mine_count=len(mine),
+        others=[(o, by_folder(owners[o]), len(owners[o])) for o in sorted(owners, key=str.lower)],
+        my_folders=sorted({s["folder"] for s in mine if s["folder"]}, key=str.lower),
+        owner_folders={o: sorted({s["folder"] for s in owners[o] if s["folder"]}, key=str.lower) for o in owners},
+        other_count=sum(len(v) for v in owners.values()))
 
 
 def own_scenario(sid):
@@ -307,7 +327,19 @@ def api_create():
         return fail("Give it a name.")
     if not entry:
         return fail("That map isn't in the game folder.")
-    return ok(id=scenarios.create(name, entry["name"], current_user()["username"]))
+    return ok(id=scenarios.create(name, entry["name"], current_user()["username"], data.get("folder", "")))
+
+
+@app.route("/api/scenarios/<sid>/folder", methods=["POST"])
+@login_required
+def api_folder(sid):
+    if own_scenario(sid) is None:
+        return fail("No such scenario.", 404)
+    try:
+        folder = scenarios.set_folder(sid, (request.get_json(silent=True) or {}).get("folder", ""))
+    except (FileNotFoundError, ValueError):
+        return fail("No such scenario.", 404)
+    return ok(folder=folder, message=("Moved to {}.".format(folder) if folder else "Out of its folder."))
 
 
 @app.route("/api/scenarios/<sid>", methods=["POST"])

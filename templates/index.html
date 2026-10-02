@@ -1,10 +1,27 @@
 {% extends 'base.html' %}
 {% block content %}
+<style>
+  .tabs-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs-row .tab-btn { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 18px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  .tabs-row .tab-btn.active { border-color: var(--holo); color: var(--holo); background: #0f2539; }
+  .folder { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; }
+  .folder > summary { cursor: pointer; padding: 9px 12px; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; }
+  .folder > summary::-webkit-details-marker { display: none; }
+  .folder > summary .caret { display: inline-block; width: 12px; transition: transform .12s; color: var(--muted); }
+  .folder[open] > summary .caret { transform: rotate(90deg); }
+  .folder > summary .fname { font-weight: 600; }
+  .folder > summary .fname.none { color: var(--muted); font-weight: 400; font-style: italic; }
+  .folder .table { margin: 0 0 4px; }
+  .owner-head { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; }
+  .owner-head h3 { margin: 0; }
+  .folder-in { width: 150px; }
+  .hidden { display: none !important; }
+</style>
 <main class="page">
   <div class="page-head">
     <div>
       <h1>Scenarios</h1>
-      <p class="muted">{% if user.role != 'admin' %}Only you (and admins) see your scenarios here. {% endif %}Saved into the game folder, where servers find them. In game, log in and type <code>!ht</code> on a map to list its scenarios, then <code>!ht &lt;n&gt; play</code> (game admins, and accounts ticked to run scenarios on the Users page).</p>
+      <p class="muted">{% if user.role != 'admin' %}Only you (and admins) see your scenarios here. {% endif %}Saved into the game folder, where servers find them. In game, log in and type <code>!ht</code> on a map to list its scenarios, then <code>!ht &lt;n&gt; play</code> (game admins, and accounts ticked to run scenarios on the Users page). Folders are just for keeping them tidy here - servers don't see them.</p>
     </div>
   </div>
 
@@ -16,55 +33,100 @@
         <input id="new-map" list="map-list" placeholder="{{ maps|length }} maps - start typing" required>
         <datalist id="map-list">{% for m in maps %}<option value="{{ m }}">{% endfor %}</datalist>
       </label>
+      <label>Folder (optional)<input id="new-folder" list="folders-mine" maxlength="80" placeholder="e.g. Cantina or Cantina/Raids"></label>
       <button class="btn primary" type="submit">Create</button>
     </form>
   </section>
 
+  <datalist id="folders-mine">{% for f in my_folders %}<option value="{{ f }}">{% endfor %}</datalist>
+
+  {% macro rows(list, folders_id, show_owner) %}
+  <table class="table">
+    <thead><tr><th>Name</th><th>Map</th>{% if show_owner %}<th>Owner</th>{% endif %}<th>Folder</th><th>Groups</th><th>Triggers</th><th>Last edited</th><th></th></tr></thead>
+    <tbody>
+      {% for s in list %}
+      <tr data-search="{{ (s.name ~ ' ' ~ s.map ~ ' ' ~ s.folder ~ ' ' ~ s.owner)|lower }}">
+        <td><a href="/edit/{{ s.id }}">{{ s.name }}</a>{% if s.description %}<div class="muted small">{{ s.description }}</div>{% endif %}</td>
+        <td><code>{{ s.map }}</code></td>
+        {% if show_owner %}
+        <td>
+          <select data-owner="{{ s.id }}" title="Who can see and edit it (besides admins)">
+            {% for u in usernames %}<option value="{{ u }}" {% if u|lower == s.owner|lower %}selected{% endif %}>{{ u }}</option>{% endfor %}
+            {% if s.owner and s.owner|lower not in usernames|map('lower')|list %}<option value="" selected>{{ s.owner }} (gone)</option>{% endif %}
+          </select>
+        </td>
+        {% endif %}
+        <td><input class="folder-in" data-folder="{{ s.id }}" list="{{ folders_id }}" value="{{ s.folder }}" maxlength="80" placeholder="No folder" title="Type a folder (new or existing) and press Enter"></td>
+        <td>{{ s.groups }}</td>
+        <td>{{ s.triggers }}</td>
+        <td class="small muted" data-time="{{ s.updated }}">{{ s.updatedBy }}</td>
+        <td class="actions">
+          <a class="btn small" href="/edit/{{ s.id }}">Edit</a>
+          <button class="btn small" data-dup="{{ s.id }}" title="Make a copy of this scenario (in the same folder) and open it">Clone</button>
+          <button class="btn small danger" data-del="{{ s.id }}" data-name="{{ s.name }}">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endmacro %}
+
+  {% macro folders(groups, folders_id, show_owner, key) %}
+  {% for f, list in groups %}
+  <details class="folder" open data-key="{{ key }}:{{ f }}">
+    <summary><span class="caret">&#9656;</span><span class="fname{% if not f %} none{% endif %}">{{ f or 'No folder' }}</span> <span class="badge">{{ list|length }}</span></summary>
+    {{ rows(list, folders_id, show_owner) }}
+  </details>
+  {% endfor %}
+  {% endmacro %}
+
   <section class="card">
     <div class="card-head">
-      <h2>{% if user.role == 'admin' %}All scenarios{% else %}Your scenarios{% endif %} <span class="badge">{{ scenarios|length }}</span></h2>
-      <input id="search" type="search" placeholder="Search name or map">
+      {% if user.role == 'admin' %}
+      <div class="tabs-row" role="tablist">
+        <button class="tab-btn" type="button" role="tab" data-tab="mine">My scenarios <span class="badge">{{ mine_count }}</span></button>
+        <button class="tab-btn" type="button" role="tab" data-tab="others">Everyone else's <span class="badge">{{ other_count }}</span></button>
+      </div>
+      {% else %}
+      <h2>Your scenarios <span class="badge">{{ scenarios|length }}</span></h2>
+      {% endif %}
+      <input id="search" type="search" placeholder="Search name, map or folder">
     </div>
-    {% if scenarios %}
-    <table class="table">
-      <thead><tr><th>Name</th><th>Map</th>{% if user.role == 'admin' %}<th>Owner</th>{% endif %}<th>Groups</th><th>Triggers</th><th>Last edited</th><th></th></tr></thead>
-      <tbody id="rows">
-        {% for s in scenarios|sort(attribute='updated', reverse=True) %}
-        <tr data-search="{{ (s.name ~ ' ' ~ s.map)|lower }}">
-          <td><a href="/edit/{{ s.id }}">{{ s.name }}</a>{% if s.description %}<div class="muted small">{{ s.description }}</div>{% endif %}</td>
-          <td><code>{{ s.map }}</code></td>
-          {% if user.role == 'admin' %}
-          <td>
-            <select data-owner="{{ s.id }}" title="Who can see and edit it (besides admins)">
-              {% for u in usernames %}<option value="{{ u }}" {% if u|lower == s.owner|lower %}selected{% endif %}>{{ u }}</option>{% endfor %}
-              {% if s.owner and s.owner|lower not in usernames|map('lower')|list %}<option value="" selected>{{ s.owner }} (gone)</option>{% endif %}
-            </select>
-          </td>
-          {% endif %}
-          <td>{{ s.groups }}</td>
-          <td>{{ s.triggers }}</td>
-          <td class="small muted" data-time="{{ s.updated }}">{{ s.updatedBy }}</td>
-          <td class="actions">
-            <a class="btn small" href="/edit/{{ s.id }}">Edit</a>
-            <button class="btn small" data-dup="{{ s.id }}" title="Make a copy of this scenario and open it">Clone</button>
-            <button class="btn small danger" data-del="{{ s.id }}" data-name="{{ s.name }}">Delete</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="muted">None yet - make one above.</p>
+
+    <div class="tab-pane" data-pane="mine">
+      {% if mine %}{{ folders(mine, 'folders-mine', false, 'mine') }}{% else %}<p class="muted">None yet - make one above.</p>{% endif %}
+    </div>
+
+    {% if user.role == 'admin' %}
+    <div class="tab-pane hidden" data-pane="others">
+      {% for o, groups, count in others %}
+      <div class="owner-block">
+        <div class="owner-head"><h3>{{ o }}</h3> <span class="badge">{{ count }}</span></div>
+        <datalist id="folders-o{{ loop.index }}">{% for f in owner_folders[o] %}<option value="{{ f }}">{% endfor %}</datalist>
+        {{ folders(groups, 'folders-o' ~ loop.index, true, 'owner:' ~ o) }}
+      </div>
+      {% else %}
+      <p class="muted">Nobody else has made any.</p>
+      {% endfor %}
+    </div>
     {% endif %}
+    <p class="muted hidden" id="no-match">Nothing matches.</p>
   </section>
 </main>
 {% endblock %}
 {% block scripts %}
 <script>
+// Per-viewer conveniences: the tab and folded folders, remembered in this browser.
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('ht:' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('ht:' + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+};
+
 document.getElementById('new-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    const r = await api('/api/scenarios', { name: document.getElementById('new-name').value, map: document.getElementById('new-map').value });
+    const r = await api('/api/scenarios', { name: document.getElementById('new-name').value, map: document.getElementById('new-map').value,
+      folder: document.getElementById('new-folder').value });
     location.href = '/edit/' + r.id;
   } catch (err) { toast(err.message, true); }
 });
@@ -77,19 +139,66 @@ document.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click',
   try { await api('/api/scenarios/' + b.dataset.del + '/delete', {}); location.reload(); }
   catch (err) { toast(err.message, true); }
 }));
-document.querySelectorAll('[data-owner]').forEach(sel => sel.addEventListener('change', async () => {
+document.querySelectorAll('select[data-owner]').forEach(sel => sel.addEventListener('change', async () => {
   if (!sel.value) return;
-  try { const r = await api('/api/scenarios/' + sel.dataset.owner + '/owner', { owner: sel.value }); toast(r.message); }
+  try { const r = await api('/api/scenarios/' + sel.dataset.owner + '/owner', { owner: sel.value }); toast(r.message); setTimeout(() => location.reload(), 600); }
   catch (err) { toast(err.message, true); }
 }));
+
+// Folder: Enter (or leaving the box) moves it; the list regroups.
+document.querySelectorAll('[data-folder]').forEach((inp) => {
+  const was = inp.value;
+  const move = async () => {
+    if (inp.value.trim() === was) return;
+    try { const r = await api('/api/scenarios/' + inp.dataset.folder + '/folder', { folder: inp.value }); toast(r.message); setTimeout(() => location.reload(), 500); }
+    catch (err) { toast(err.message, true); inp.value = was; }
+  };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+  inp.addEventListener('change', move);
+});
+
 document.querySelectorAll('[data-time]').forEach(td => {
   const t = +td.dataset.time;
   if (t) td.textContent = new Date(t * 1000).toLocaleString() + (td.textContent.trim() ? ' - ' + td.textContent.trim() : '');
 });
-const search = document.getElementById('search');
-if (search) search.addEventListener('input', () => {
-  const q = search.value.trim().toLowerCase();
-  document.querySelectorAll('#rows tr').forEach(r => r.style.display = !q || r.dataset.search.includes(q) ? '' : 'none');
+
+// Folded folders stay folded.
+const folded = new Set(store.get('folded', []));
+document.querySelectorAll('details.folder').forEach((d) => {
+  if (folded.has(d.dataset.key)) d.open = false;
+  d.addEventListener('toggle', () => {
+    if (d.open) folded.delete(d.dataset.key); else folded.add(d.dataset.key);
+    store.set('folded', [...folded]);
+  });
 });
+
+// Tabs (admins).
+function showTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== name));
+  store.set('tab', name);
+  filter();
+}
+document.querySelectorAll('.tab-btn').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+// Search: rows, then folders and owners with nothing left.
+const search = document.getElementById('search');
+function filter() {
+  const q = (search ? search.value : '').trim().toLowerCase();
+  let any = false;
+  document.querySelectorAll('.tab-pane:not(.hidden)').forEach((pane) => {
+    pane.querySelectorAll('details.folder').forEach((d) => {
+      let shown = 0;
+      d.querySelectorAll('tbody tr').forEach((r) => { const ok = !q || r.dataset.search.includes(q); r.style.display = ok ? '' : 'none'; shown += ok; });
+      d.classList.toggle('hidden', !shown);
+      if (q && shown) d.open = true;
+      any = any || shown > 0;
+    });
+    pane.querySelectorAll('.owner-block').forEach((o) => o.classList.toggle('hidden', !o.querySelector('details.folder:not(.hidden)')));
+  });
+  document.getElementById('no-match').classList.toggle('hidden', !q || any);
+}
+if (search) search.addEventListener('input', filter);
+if (document.querySelector('.tab-btn')) showTab(store.get('tab', 'mine') === 'others' ? 'others' : 'mine'); else filter();
 </script>
 {% endblock %}
