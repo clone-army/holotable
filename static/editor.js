@@ -143,6 +143,7 @@ function allPositions() {
   s.routes.forEach((r) => r.points.forEach((p) => out.push(p)));
   (s.props || []).forEach((p) => out.push(p));
   (s.items || []).forEach((p) => out.push(p));
+  ['vehicles', 'effects', 'sounds'].forEach((k) => (s[k] || []).forEach((p) => out.push(p)));
   return out;
 }
 
@@ -183,10 +184,13 @@ function drawNow() {
   drawOverlay();
 }
 
-const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d', sel: '#ffffff', prop: '#e0a96d', item: '#5ee6ff' };
+const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d', sel: '#ffffff', prop: '#e0a96d', item: '#5ee6ff', vehicle: '#b0f070', effect: '#ff7a59', sound: '#c79bff' };
 // What the prop and item tools put down (the last one picked).
 S.propModel = 'models/map_objects/imperial/crate.md3';
 S.itemName = 'item_medpak_instant';
+S.vehicleName = '';
+// Placed kinds: their list in the scenario and what names them.
+const PLACED = { prop: ['props', 'model'], item: ['items', 'item'], vehicle: ['vehicles', 'vehicle'], effect: ['effects', 'effect'], sound: ['sounds', 'sound'] };
 // A prop's size from the props list (loaded once): [mins, maxs], or a guess.
 function propBox(model) {
   const p = ((LISTS.props || {}).props || []).find((x) => x.model.toLowerCase() === String(model || '').toLowerCase());
@@ -384,6 +388,24 @@ function drawOverlay() {
     ctx.beginPath(); ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y); ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3); ctx.strokeStyle = COL.item; ctx.stroke();
     label(it.name, x, y, COL.item);
   }
+  for (const [kind, list] of [['vehicle', s.vehicles], ['effect', s.effects], ['sound', s.sounds]]) {
+    for (const o of list || []) {
+      const [x, y] = w2s(o.x, o.y), sel = isSel(kind, o.id), r = sel ? 7 : 5.5;
+      ctx.globalAlpha = alphaFor(o.z);
+      ctx.beginPath();
+      if (kind === 'vehicle') { ctx.rect(x - r, y - r * 0.7, r * 2, r * 1.4); }
+      else if (kind === 'effect') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * 0.8); ctx.lineTo(x - r, y + r * 0.8); ctx.closePath(); }
+      else { ctx.arc(x, y, r, 0, Math.PI * 2); }
+      ctx.fillStyle = COL[kind]; ctx.globalAlpha *= 0.85; ctx.fill(); ctx.globalAlpha = alphaFor(o.z);
+      ctx.lineWidth = sel ? 2 : 1; ctx.strokeStyle = sel ? COL.sel : 'rgba(5,11,20,0.9)'; ctx.stroke();
+      if (kind === 'sound') { ctx.beginPath(); ctx.arc(x, y, r + 5, -0.6, 0.6); ctx.strokeStyle = COL.sound; ctx.lineWidth = 1.5; ctx.stroke(); }
+      if (kind === 'vehicle') {
+        const yr = -(o.yaw || 0) * Math.PI / 180;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(yr) * 16, y + Math.sin(yr) * 16); ctx.strokeStyle = COL.vehicle; ctx.lineWidth = 2; ctx.stroke();
+      }
+      label(o.name, x, y, COL[kind]);
+    }
+  }
   // Points
   for (const p of s.points) {
     const [x, y] = w2s(p.x, p.y);
@@ -415,6 +437,9 @@ function hitTest(sx, sy) {
   const s = S.scn, d2 = (x, y) => (x - sx) ** 2 + (y - sy) ** 2;
   for (const p of s.points) { const [x, y] = w2s(p.x, p.y); if (d2(x, y) < 81) return { kind: 'point', id: p.id }; }
   for (const it of s.items || []) { const [x, y] = w2s(it.x, it.y); if (d2(x, y) < 81) return { kind: 'item', id: it.id }; }
+  for (const [kind, list] of [['vehicle', s.vehicles], ['effect', s.effects], ['sound', s.sounds]]) {
+    for (const o of list || []) { const [x, y] = w2s(o.x, o.y); if (d2(x, y) < 81) return { kind, id: o.id }; }
+  }
   for (const p of s.props || []) {
     const [mn, mx] = propBox(p.model), r = Math.max(9, Math.max(mx[0] - mn[0], mx[1] - mn[1]) / 2 * S.view.zoom);
     const [x, y] = w2s(p.x, p.y); if (d2(x, y) < r * r) return { kind: 'prop', id: p.id };
@@ -443,7 +468,8 @@ function segDist(px, py, x1, y1, x2, y2) {
 }
 
 function find(kind, id) {
-  const list = { point: S.scn.points, route: S.scn.routes, area: S.scn.areas, prop: S.scn.props, item: S.scn.items }[kind];
+  const list = { point: S.scn.points, route: S.scn.routes, area: S.scn.areas, prop: S.scn.props, item: S.scn.items,
+    vehicle: S.scn.vehicles, effect: S.scn.effects, sound: S.scn.sounds }[kind];
   return list ? list.find((x) => x.id === id) : null;
 }
 
@@ -515,6 +541,20 @@ function onDown(e) {
     s.items.push(it);
     S.sel = { kind: 'item', id: it.id };
     changed();
+  } else if (S.tool === 'vehicle' || S.tool === 'effect' || S.tool === 'sound') {
+    const kind = S.tool, [listKey, nameKey] = PLACED[kind];
+    // The last one picked: for effects and sounds, the newest placed that has one.
+    const last = kind === 'vehicle' ? S.vehicleName : ((s[listKey].filter((x) => x[nameKey]).slice(-1)[0]) || {})[nameKey] || '';
+    const base = last ? last.split('/').pop().replace(/\.(mp3|wav)$/i, '') : kind[0].toUpperCase() + kind.slice(1);
+    const o = { id: uid(kind[0]), name: nextName(s[listKey], base), [nameKey]: last };
+    if (kind === 'vehicle') o.yaw = 0;
+    if (kind === 'effect') o.every = 1;
+    placeZ(o, wx, wy);
+    s[listKey].push(o);
+    S.sel = { kind, id: o.id };
+    if (kind === 'vehicle') S.drag = { type: 'yaw', kind: 'vehicle', id: o.id, sx, sy };
+    changed();
+    if (!last) { renderPanels('places'); toast('Pick which ' + kind + ' in the Places tab - new ones use the last picked.'); }
   } else if (S.tool === 'area') {
     const a = { id: uid('a'), name: nextName(s.areas, 'Area'), radius: 32, height: 128 };
     placeZ(a, wx, wy);
@@ -607,7 +647,7 @@ function deleteSelection() {
     S.sel = r.points.length ? { kind: 'route', id: r.id } : null;
     if (!r.points.length) s.routes = s.routes.filter((q) => q !== r);
   } else {
-    const key = { point: 'points', route: 'routes', area: 'areas', prop: 'props', item: 'items' }[sel.kind];
+    const key = { point: 'points', route: 'routes', area: 'areas', prop: 'props', item: 'items', vehicle: 'vehicles', effect: 'effects', sound: 'sounds' }[sel.kind];
     s[key] = s[key].filter((x) => x.id !== sel.id);
     S.sel = null;
   }
@@ -630,6 +670,9 @@ const HINTS = {
   area: 'Click the middle of the area and drag out its size. A trigger can fire when a player walks in.',
   prop: 'Click to place a prop, drag to turn it. Pick its model in the Places tab - new ones use the last picked.',
   item: 'Click to place an item (a pickup). Pick which in the Places tab - new ones use the last picked.',
+  vehicle: 'Click to park a vehicle, drag to face it. Pick which in the Places tab - new ones use the last picked.',
+  effect: 'Click to place a looping effect. Pick it, and how often it plays, in the Places tab.',
+  sound: 'Click to place a looping sound. Pick it in the Places tab.',
 };
 
 function updateHud() {
@@ -729,7 +772,7 @@ function validate() {
   const ids = (list) => new Set(list.map((x) => x.id));
   const pointIds = ids(s.points), routeIds = ids(s.routes), areaIds = ids(s.areas), groupIds = ids(s.groups), trigIds = ids(s.triggers);
   const startsSpawned = s.groups.some((g) => g.spawnAtStart);
-  if (!s.triggers.length && !startsSpawned && !(s.props || []).length && !(s.items || []).length) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, add a trigger, or place props or items.', { tab: 'triggers' });
+  if (!s.triggers.length && !startsSpawned && !['props', 'items', 'vehicles', 'effects', 'sounds'].some((k) => (s[k] || []).length)) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, add a trigger, or place props or items.', { tab: 'triggers' });
   else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer or a player entering an area (or a group that spawns at the start).', { tab: 'triggers' });
   if (s.limitClasses) {
     const c = ((LISTS[clsKey(s)] || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
@@ -739,6 +782,9 @@ function validate() {
         add('error', 'No ' + S.teams[tm] + ' class is ticked - nobody could play that side.', { tab: 'scenario' });
     }
     if (!(s.classes || []).length) add('error', 'Classes are limited but none is ticked.', { tab: 'scenario' });
+  }
+  for (const [kind, [listKey, nameKey]] of Object.entries(PLACED)) {
+    (s[listKey] || []).forEach((o) => { if (!o[nameKey]) add('error', 'The ' + kind + ' "' + o.name + '" needs picking - which ' + kind + ' it is (Places tab).', { kind, id: o.id }); });
   }
   const spawned = new Set();
   s.triggers.forEach((t) => t.actions.forEach((a) => { if (a.do === 'spawn') spawned.add(a.group); }));
@@ -1093,13 +1139,28 @@ function renderPlaces(el) {
       });
       box.append(field('Item', pick, 'A pickup, as the map\'s own are - picked up, it comes back as they do. There from the start; gone when the scenario ends.'));
     }
-    if (kind === 'point' || kind === 'area' || kind === 'prop' || kind === 'item') {
+    if (kind === 'vehicle') {
+      const pick = h('div', {});
+      loadList('veh', '/api/vehicles', 'vehicles').then((list) => {
+        pick.append(combo({ value: sel.vehicle || '', items: () => list.map((v) => ({ value: v })), placeholder: 'Search ' + list.length + ' vehicles',
+          onPick: (v) => { sel.vehicle = v; S.vehicleName = v; changed(); } }));
+      });
+      box.append(field('Vehicle', pick, 'Parked there from the start, ready to ride. Taken away when the scenario ends - unless someone\'s riding it.'));
+    }
+    if (kind === 'effect') {
+      box.append(field('Effect', effectPicker(sel, 'effect'), 'Played there over and over while the scenario runs - fire, smoke, sparks, steam...'),
+        field('Every (seconds)', numIn(sel, 'every', { min: 0.2, max: 60, step: 0.1 }), 'How often it plays again. Match it to the effect\'s length for a steady loop.'));
+    }
+    if (kind === 'sound') {
+      box.append(field('Sound', soundPicker(sel, 'sound', 'sound/... - a looping one works best'), 'Plays on a loop there for the whole scenario, heard by anyone nearby - alarms, machinery, a crowd...'));
+    }
+    if (['point', 'area', 'prop', 'item', 'vehicle', 'effect', 'sound'].includes(kind)) {
       box.append(h('div', { class: 'grid3' }, field('x', numIn(sel, 'x')), field('y', numIn(sel, 'y')), field('z', numIn(sel, 'z'))));
       const floors = surfacesAt(sel.x, sel.y);
       if (floors.length > 1) box.append(h('div', { class: 'snap' }, h('span', { class: 'muted small' }, 'Floors here: '),
         floors.slice(0, 6).map((z) => h('button', { class: 'btn tiny' + (Math.abs(z - sel.z) < 2 ? ' on' : ''), onclick: () => { sel.z = Math.round(z); changed(); } }, String(Math.round(z))))));
     }
-    if (kind === 'point' || kind === 'prop') box.append(field('Facing (degrees)', numIn(sel, 'yaw', { min: 0, max: 359 })));
+    if (kind === 'point' || kind === 'prop' || kind === 'vehicle') box.append(field('Facing (degrees)', numIn(sel, 'yaw', { min: 0, max: 359 })));
     if (kind === 'area') box.append(h('div', { class: 'grid2' }, field('Radius', numIn(sel, 'radius', { min: 16 })), field('Height', numIn(sel, 'height', { min: 32 }))));
     if (kind === 'route') {
       const tbl = h('table', { class: 'mini' }, h('tr', {}, h('th', {}, '#'), h('th', {}, 'x'), h('th', {}, 'y'), h('th', {}, 'z'), h('th', {})));
@@ -1133,6 +1194,9 @@ function renderPlaces(el) {
   listFor('Areas', 'area', s.areas, (a) => ' radius ' + Math.round(a.radius));
   listFor('Props', 'prop', s.props || [], (p) => ' ' + shortModel(p.model));
   listFor('Items', 'item', s.items || [], (i) => ' ' + i.item);
+  listFor('Vehicles', 'vehicle', s.vehicles || [], (v) => ' ' + (v.vehicle || 'pick one'));
+  listFor('Effects', 'effect', s.effects || [], (f) => ' ' + (f.effect || 'pick one') + ', every ' + f.every + 's');
+  listFor('Sounds', 'sound', s.sounds || [], (o) => ' ' + (o.sound || 'pick one'));
 }
 
 // A searchable dropdown: type to filter, arrows and Enter (or a click) to
@@ -2051,7 +2115,7 @@ function renderChecks(el) {
 // --- Load and save -----------------------------------------------------------
 
 function normalise(s) {
-  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters', 'props', 'items']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters', 'props', 'items', 'vehicles', 'effects', 'sounds']) if (!Array.isArray(s[k])) s[k] = [];
   if (!s.joinTeam) s.joinTeam = 'any';
   if (!s.mode) s.mode = s.classMode === 'legends' ? 'legends' : 'fa';
   s.classMode = s.mode === 'legends' ? 'legends' : 'map';
@@ -2189,7 +2253,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === ' ') { S.space = true; e.preventDefault(); return; }
   if (e.key === 'Enter' || e.key === 'Escape') { finishRoute(); draw(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); return; }
-  const tools = { v: 'select', p: 'point', r: 'route', a: 'area', o: 'prop', i: 'item' };
+  const tools = { v: 'select', p: 'point', r: 'route', a: 'area', o: 'prop', i: 'item', h: 'vehicle', e: 'effect', u: 'sound' };
   if (tools[e.key.toLowerCase()]) setTool(tools[e.key.toLowerCase()]);
   if (e.key.toLowerCase() === 'f') fit();
 });

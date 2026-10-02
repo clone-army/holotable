@@ -218,7 +218,7 @@ def clean(data):
         "team1": re.sub(r"[^\w\-]", "", str(data.get("team1") or ""))[:63],
         "team2": re.sub(r"[^\w\-]", "", str(data.get("team2") or ""))[:63],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
-        "props": [], "items": [],
+        "props": [], "items": [], "vehicles": [], "effects": [], "sounds": [],
     }
     for p in lst("points")[:64]:
         if isinstance(p, dict):
@@ -246,6 +246,17 @@ def clean(data):
             item = str(it.get("item") or "")
             if re.match(r"^(item|weapon|ammo|holdable)_\w{1,40}$", item):
                 out["items"].append(dict(id=_text(it.get("id"), 39), name=_text(it.get("name"), 40), item=item, **pos(it)))
+    for v in lst("vehicles")[:16]:
+        if isinstance(v, dict) and re.match(r"^[\w\-]{1,47}$", str(v.get("vehicle") or "")):
+            out["vehicles"].append(dict(id=_text(v.get("id"), 39), name=_text(v.get("name"), 40), vehicle=str(v["vehicle"]),
+                                        yaw=round(_num(v.get("yaw")) % 360, 1), **pos(v)))
+    for e in lst("effects")[:32]:
+        if isinstance(e, dict) and str(e.get("effect") or "").strip():
+            out["effects"].append(dict(id=_text(e.get("id"), 39), name=_text(e.get("name"), 40), effect=_text(e.get("effect"), 95),
+                                       every=round(max(0.2, min(60, _num(e.get("every"), 1))), 1), **pos(e)))
+    for so in lst("sounds")[:32]:
+        if isinstance(so, dict) and str(so.get("sound") or "").startswith("sound/"):
+            out["sounds"].append(dict(id=_text(so.get("id"), 39), name=_text(so.get("name"), 40), sound=_text(so.get("sound"), 127), **pos(so)))
     for g in lst("groups")[:16]:
         if isinstance(g, dict):
             npcs = [_text(n, 47) for n in (g.get("npcs") or [])[:8] if str(n or "").strip()]

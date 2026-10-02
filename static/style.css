@@ -165,6 +165,9 @@ input[type="range"] { padding: 0; accent-color: var(--holo); }
 .tag.area { color: #7cff9b; background: #143a22; }
 .tag.prop { color: #e0a96d; background: #3a2a18; }
 .tag.item { color: #5ee6ff; background: #12313a; }
+.tag.vehicle { color: #b0f070; background: #26381a; }
+.tag.effect { color: #ff7a59; background: #3a1d14; }
+.tag.sound { color: #c79bff; background: #2a1f3a; }
 .tag.trigger { color: #c79bff; background: #2a1a44; }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; min-width: 0; }
 .field > span { font-size: 12px; color: var(--muted); }
@@ -189,6 +192,9 @@ input[type="range"] { padding: 0; accent-color: var(--holo); }
 .dot.area { background: #7cff9b; }
 .dot.prop { background: #e0a96d; }
 .dot.item { background: #5ee6ff; }
+.dot.vehicle { background: #b0f070; }
+.dot.effect { background: #ff7a59; }
+.dot.sound { background: #c79bff; }
 .snap { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 10px; }
 table.mini { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
 table.mini th, table.mini td { padding: 3px 4px; border-bottom: 1px solid var(--line); text-align: left; }

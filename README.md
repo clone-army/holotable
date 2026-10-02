@@ -25,6 +25,10 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   NPCs and shots stop at it) and items (weapons, ammo, health... picked up as
   the map's own are). Both go when the scenario ends. A prop can also be put
   down mid-scenario by a trigger (Place a prop).
+- **Vehicles, effects and sounds.** Also placed straight on the map, there
+  from the start: parked vehicles ready to ride (taken away at the end unless
+  someone's riding one), looping effects (fire, smoke, sparks... played every
+  so often) and looping sounds (alarms, machinery, crowds).
 - **Map entities.** The cut panel shows the map's own entities by kind -
   spawns (coloured by side), doors and lifts, triggers, items, NPC spawners
   and the rest (relays, location markers...). Hover one for its class and
@@ -179,6 +183,9 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   (the box, `mins` / `maxs`, is filled in from the model on save);
   `items`: `[{ "item": "weapon_blaster", "x", "y", "z" }]` - both placed as
   the scenario starts.
+- `vehicles`: `[{ "vehicle", "x", "y", "z", "yaw" }]`; `effects`:
+  `[{ "effect", "x", "y", "z", "every" }]` (seconds); `sounds`:
+  `[{ "sound": "sound/...", "x", "y", "z" }]` - also placed as it starts.
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `routePace` is `walk`
   (default) or `run`. `engage` is how close a player comes before a route
   walker or guard goes for them.
