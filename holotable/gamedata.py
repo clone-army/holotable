@@ -510,6 +510,7 @@ def map_entities(mapname):
             b = models[int(mm.group(1))]
             box = [b[0] + org[0], b[1] + org[1], b[2] + org[2], b[3] + org[0], b[4] + org[1], b[5] + org[2]]
             item["b"] = [round(v) for v in box]
+            item["m"] = "*" + mm.group(1)  # its brush model: how the server finds it
             org = [(box[0] + box[3]) / 2, (box[1] + box[4]) / 2, box[2]]
         elif not m:
             continue  # nowhere to show it

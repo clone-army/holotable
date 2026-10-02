@@ -722,6 +722,8 @@ function validate() {
       if (['explode', 'effect'].includes(a.do) && !placeIds.has(a.at) && !(a.at === 'player' && hasPlayer)) add('error', 'Trigger "' + nm + '": pick where the ' + (a.do === 'explode' ? 'explosion' : 'effect') + ' happens.', { tab: 'triggers' });
       if (a.do === 'teleport' && !placeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where to teleport them to.', { tab: 'triggers' });
       if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
+      if (a.do === 'break' && !a.model) add('error', 'Trigger "' + nm + '": pick what to break.', { tab: 'triggers' });
+      if (a.do === 'respawn' && a.where && !pointIds.has(a.where) && !routeIds.has(a.where)) add('error', 'Trigger "' + nm + '": the respawn point is gone - pick another.', { tab: 'triggers' });
       if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
       if (a.do === 'arm' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Give weapon action has no group.', { tab: 'triggers' });
       if (a.do === 'side' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Change side action has no group.', { tab: 'triggers' });
@@ -1214,7 +1216,7 @@ function groupSummary(g) {
 }
 const ACTION_SHORT = {
   spawn: 'spawn', despawn: 'remove group', say: 'NPC speech', tell: 'tell player', message: 'chat', center: 'centre message',
-  explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity',
+  explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity', break: 'break', respawn: 'move respawn',
   give: 'give', heal: 'heal', kill: 'kill', knockdown: 'knock down', freeze: 'freeze', vehicle: 'vehicle', pickup: 'pickup',
   move: 'new orders', side: 'change side', arm: 'give weapon', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
   objective: 'objective', texture: 'texture swap', gravity: 'gravity', speed: 'speed', addtime: 'round time', win: 'win round', end: 'end',
@@ -1494,6 +1496,8 @@ const ACTION_TYPES = [
   { v: 'music', t: 'Change the music' },
   { v: 'teleport', t: 'Teleport players' },
   { v: 'use', t: 'Use a map entity (door, lift, button...)' },
+  { v: 'break', t: 'Break something on the map (window, wall...)' },
+  { v: 'respawn', t: 'Move where a side respawns' },
   { v: 'give', t: 'Give players a weapon, health, armour, ammo or item' },
   { v: 'heal', t: 'Heal players to full' },
   { v: 'kill', t: 'Kill players' },
@@ -1642,6 +1646,7 @@ function actionRow(t, a, i) {
     if (a.do === 'move') a.behaviour = 'hunt';
     if (a.do === 'side') a.attacks = 'all';
     if (a.do === 'arm') a.weapon = 'WP_BLASTER';
+    if (a.do === 'respawn') Object.assign(a, { team: (S.scn.joinTeam && S.scn.joinTeam !== 'any') ? S.scn.joinTeam : 'both', where: '' });
     if (a.do === 'counter') { a.op = 'add'; a.value = 1; a.counter = (S.scn.counters[0] || {}).id || ''; }
     if (a.do === 'countdown') { a.seconds = 30; a.text = ''; }
     if (a.do === 'objective') { a.team = 'team1'; a.objective = 1; }
@@ -1834,6 +1839,34 @@ function actionRow(t, a, i) {
           : field('Speed, % of normal (50 = half, 200 = double)', numIn(a, 'value', { min: 10, max: 400 })),
         field('For (seconds, 0 = till it ends)', numIn(a, 'seconds', { min: 0, max: 3600 }))));
       break;
+    case 'respawn':
+      row.append(selectIn(a, 'team', [
+        { v: 'both', t: 'Both sides' },
+        { v: 'team1', t: S.teams.team1 },
+        { v: 'team2', t: S.teams.team2 },
+      ]), selectIn(a, 'where', [{ v: '', t: 'The map\'s own spawns (put back)' }]
+        .concat(S.scn.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), S.scn.routes.map((r) => ({ v: r.id, t: 'Along route: ' + r.name })))),
+      h('small', { class: 'muted' }, 'From now on, players on that side who spawn are moved there straight away - spread round a point, or a route\'s points in turn. Lasts till another of these or the scenario ends.'));
+      break;
+    case 'break': {
+      // The map's breakables (loaded with the map's entities).
+      const list = (S.ents || []).filter((e) => e.m && /breakable|glass/i.test(e.c));
+      const label = (e) => (e.n ? '"' + e.n + '" ' : '') + e.c.replace(/^func_/, '') + ' ' + e.m + ' (' + e.x + ', ' + e.y + ', floor ' + (e.b ? e.b[2] : e.z) + ')';
+      const holder = { pick: a.model || '' };
+      const sel = selectIn(holder, 'pick', [{ v: '', t: list.length ? '- pick one of ' + list.length + ' -' : (S.ents ? 'This map has no breakables' : 'Loading the map\'s entities...') }]
+        .concat(list.map((e) => ({ v: e.m, t: label(e) }))), () => {
+        const e = list.find((x) => x.m === holder.pick);
+        a.model = holder.pick; a.target = (e && e.n) || '';
+        changed();
+      });
+      const show = h('button', { type: 'button', class: 'btn tiny', title: 'Show it on the map', onclick: () => {
+        const e = list.find((x) => x.m === a.model);
+        if (e) { S.entShow[e.k] = true; S.entHover = e; setCut(Math.max(S.cut, (e.b ? e.b[2] : e.z) + 60)); centreOn(e.x, e.y); setupEntKinds(); }
+      } }, 'Show');
+      row.append(h('div', { class: 'input-row' }, sel, show),
+        h('small', { class: 'muted' }, 'Smashed as if shot to pieces. It stays broken till the round restarts.'));
+      break;
+    }
     case 'use': {
       const box = h('div', {});
       loadTargets().then((list) => {

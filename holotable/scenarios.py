@@ -22,7 +22,7 @@ SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
          "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
-           "teleport", "use", "despawn", "win", "end",
+           "teleport", "use", "despawn", "win", "end", "respawn", "break",
            "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side", "arm",
            "trigger_on", "trigger_off", "counter", "countdown", "objective", "texture", "gravity", "speed")
 WHO_FIXED = ("player", "all", "team1", "team2")
@@ -286,6 +286,13 @@ def clean(data):
                 act["at"] = _text(a.get("at"), 39)
                 act["who"] = "all" if a.get("who") == "all" else "player"
             elif d == "use":
+                act["target"] = _text(a.get("target"), 63)
+            elif d == "respawn":
+                act["team"] = a.get("team") if a.get("team") in ("team1", "team2") else "both"
+                act["where"] = _text(a.get("where"), 39)  # a point or route; "" = the map's own spawns
+            elif d == "break":
+                m = str(a.get("model") or "")
+                act["model"] = m if re.match(r"^\*\d{1,4}$", m) else ""
                 act["target"] = _text(a.get("target"), 63)
             elif d in ("give", "knockdown", "kill", "heal", "freeze"):
                 act["who"] = _text(a.get("who") or "player", 39)

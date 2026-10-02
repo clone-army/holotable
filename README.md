@@ -145,6 +145,11 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
     the end; `gravity` (`value`, normal 800) and `speed` (`value`, % of normal
     ground speed) for `seconds` (0 = till the end);
     `addtime` (`seconds` on or off the round clock)
+  - `respawn` (`team`: `team1`, `team2` or `both`; `where`: a point or route,
+    or empty for the map's own spawns) - players on that side who spawn from
+    then on are moved there
+  - `break` (`model`: a breakable's brush model, `*12`, and its `target`
+    name if it has one) - smashes it; it stays broken till the round restarts
   - `win` (`team`: `team1`, `team2` or `draw`, optional `text`) - ends the
     scenario, then the round, as if that side had won it
   - `music` (`path`), `end` (optional `text`)
