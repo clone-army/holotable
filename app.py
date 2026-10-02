@@ -222,6 +222,12 @@ def api_model_icon(model, skin):
     return Response(hit[0], mimetype=hit[1], headers={"Cache-Control": "private, max-age=86400"})
 
 
+@app.route("/api/props")
+@login_required
+def api_props():
+    return ok(props=gamedata.list_props())
+
+
 @app.route("/api/vehicles")
 @login_required
 def api_vehicles():

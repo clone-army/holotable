@@ -40,6 +40,8 @@ def _path(value):
 # engine looks for them.
 GAMEDATA = _path(get("GAMEDATA", "/opt/openjk/MBII"))
 SCENARIO_DIR = _path(get("HT_SCENARIO_DIR", "") or os.path.join(GAMEDATA, "holotable"))
+# Base Jedi Academy's folder (its assets*.pk3) - props come from there too.
+BASEDATA = _path(get("HT_BASEDATA", "") or os.path.join(os.path.dirname(GAMEDATA.rstrip("/")), "base"))
 DATA_DIR = _path(get("HT_DATA_DIR", "data"))
 CACHE_DIR = os.path.join(DATA_DIR, "cache")
 # More folders of loose .npc files (colon separated) - e.g. an instance's

@@ -591,6 +591,69 @@ def _vehicles_and_items():
         return _extra
 
 
+# --- Props ------------------------------------------------------------------
+#
+# Models a scenario can place as solid objects: the md3s under
+# models/map_objects/ in base JA's and MBII's asset pk3s (every player has them),
+# each with its size - frame 0's bounds - for the solid box round it.
+
+_props = {"sig": None, "list": []}
+
+
+def _md3_bounds(z, member):
+    """(mins, maxs) of an md3's first frame, or None."""
+    try:
+        with z.open(member) as f:
+            head = f.read(108)
+            if len(head) < 108 or head[:4] != b"IDP3":
+                return None
+            ofs = struct.unpack_from("<i", head, 92)[0]
+            f.read(max(0, ofs - 108))
+            frame = f.read(24)
+        mins, maxs = struct.unpack_from("<3f", frame, 0), struct.unpack_from("<3f", frame, 12)
+        return [round(v) for v in mins], [round(v) for v in maxs]
+    except (KeyError, OSError, struct.error, zipfile.BadZipFile):
+        return None
+
+
+def list_props():
+    """[{"model", "mins", "maxs"}] A-Z."""
+    with _lock:
+        _refresh()
+        if _props["sig"] == _index["sig"]:
+            return _props["list"]
+    found = {}
+    paths = []
+    try:
+        paths += [os.path.join(config.BASEDATA, f) for f in sorted(os.listdir(config.BASEDATA)) if f.lower().endswith(".pk3")]
+    except OSError:
+        pass
+    # MBII's own asset pk3s only - map packs aren't on every player's machine,
+    # and a model a player hasn't got shows as nothing (or an error model).
+    paths += [os.path.join(config.GAMEDATA, n) for n in _pk3s() if n.lower().startswith("mbassets")]
+    for path in paths:
+        try:
+            with zipfile.ZipFile(path) as z:
+                for member in z.namelist():
+                    low = member.lower()
+                    if low.startswith("models/map_objects/") and low.endswith(".md3") and low not in found:
+                        b = _md3_bounds(z, member)
+                        if b and all(-4096 < v < 4096 for v in b[0] + b[1]) and b[1][2] > b[0][2]:
+                            found[low] = {"model": member, "mins": b[0], "maxs": b[1]}
+        except (zipfile.BadZipFile, OSError):
+            continue
+    out = sorted(found.values(), key=lambda p: p["model"].lower())
+    with _lock:
+        _props.update(sig=_index["sig"], list=out)
+    return out
+
+
+def prop_bounds(model):
+    """(mins, maxs) for a prop model, or None."""
+    low = str(model or "").lower()
+    return next(((p["mins"], p["maxs"]) for p in list_props() if p["model"].lower() == low), None)
+
+
 def list_vehicles():
     return _vehicles_and_items()["vehicles"]
 

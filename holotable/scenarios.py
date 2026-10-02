@@ -22,7 +22,7 @@ SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
          "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
-           "teleport", "use", "despawn", "win", "end", "respawn", "break",
+           "teleport", "use", "despawn", "win", "end", "respawn", "break", "prop",
            "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side", "arm",
            "trigger_on", "trigger_off", "counter", "countdown", "objective", "texture", "gravity", "speed")
 WHO_FIXED = ("player", "all", "team1", "team2")
@@ -290,6 +290,17 @@ def clean(data):
             elif d == "respawn":
                 act["team"] = a.get("team") if a.get("team") in ("team1", "team2") else "both"
                 act["where"] = _text(a.get("where"), 39)  # a point or route; "" = the map's own spawns
+            elif d == "prop":
+                # Its solid box comes from the model itself.
+                from . import gamedata
+                model = str(a.get("model") or "")
+                b = gamedata.prop_bounds(model) if re.match(r"^models/[\w/.\-]+\.md3$", model, re.I) else None
+                act["model"] = model if b else ""
+                act["at"] = _text(a.get("at"), 39)
+                if a.get("yaw") not in (None, ""):
+                    act["yaw"] = int(_num(a.get("yaw"), 0)) % 360
+                if b:
+                    act["mins"], act["maxs"] = b
             elif d == "break":
                 m = str(a.get("model") or "")
                 act["model"] = m if re.match(r"^\*\d{1,4}$", m) else ""

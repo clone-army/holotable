@@ -723,6 +723,8 @@ function validate() {
       if (a.do === 'teleport' && !placeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where to teleport them to.', { tab: 'triggers' });
       if (a.do === 'use' && !a.target) add('error', 'Trigger "' + nm + '": pick the map entity to use.', { tab: 'triggers' });
       if (a.do === 'break' && !a.model) add('error', 'Trigger "' + nm + '": pick what to break.', { tab: 'triggers' });
+      if (a.do === 'prop' && !a.model) add('error', 'Trigger "' + nm + '": pick the prop\'s model.', { tab: 'triggers' });
+      if (a.do === 'prop' && !placeIds.has(a.at) && !(a.at === 'player' && hasPlayer)) add('error', 'Trigger "' + nm + '": pick where the prop goes.', { tab: 'triggers' });
       if (a.do === 'respawn' && a.where && !pointIds.has(a.where) && !routeIds.has(a.where)) add('error', 'Trigger "' + nm + '": the respawn point is gone - pick another.', { tab: 'triggers' });
       if (a.do === 'despawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Remove action has no group.', { tab: 'triggers' });
       if (a.do === 'arm' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Give weapon action has no group.', { tab: 'triggers' });
@@ -1216,7 +1218,7 @@ function groupSummary(g) {
 }
 const ACTION_SHORT = {
   spawn: 'spawn', despawn: 'remove group', say: 'NPC speech', tell: 'tell player', message: 'chat', center: 'centre message',
-  explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity', break: 'break', respawn: 'move respawn',
+  explode: 'explosion', effect: 'effect', shake: 'shake', sound: 'sound', music: 'music', teleport: 'teleport', use: 'use entity', break: 'break', respawn: 'move respawn', prop: 'prop',
   give: 'give', heal: 'heal', kill: 'kill', knockdown: 'knock down', freeze: 'freeze', vehicle: 'vehicle', pickup: 'pickup',
   move: 'new orders', side: 'change side', arm: 'give weapon', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
   objective: 'objective', texture: 'texture swap', gravity: 'gravity', speed: 'speed', addtime: 'round time', win: 'win round', end: 'end',
@@ -1498,6 +1500,7 @@ const ACTION_TYPES = [
   { v: 'use', t: 'Use a map entity (door, lift, button...)' },
   { v: 'break', t: 'Break something on the map (window, wall...)' },
   { v: 'respawn', t: 'Move where a side respawns' },
+  { v: 'prop', t: 'Place a prop (crate, barrel, barrier...) - solid' },
   { v: 'give', t: 'Give players a weapon, health, armour, ammo or item' },
   { v: 'heal', t: 'Heal players to full' },
   { v: 'kill', t: 'Kill players' },
@@ -1839,6 +1842,20 @@ function actionRow(t, a, i) {
           : field('Speed, % of normal (50 = half, 200 = double)', numIn(a, 'value', { min: 10, max: 400 })),
         field('For (seconds, 0 = till it ends)', numIn(a, 'seconds', { min: 0, max: 3600 }))));
       break;
+    case 'prop': {
+      const box = h('div', {});
+      loadList('props', '/api/props', 'props').then((list) => {
+        const size = (p) => (p.maxs[0] - p.mins[0]) + ' x ' + (p.maxs[1] - p.mins[1]) + ', ' + (p.maxs[2] - p.mins[2]) + ' tall';
+        box.prepend(combo({ value: a.model || '', items: () => list.map((p) => ({ value: p.model, sub: size(p) })),
+          placeholder: 'Search ' + list.length + ' props - crate, barrel, cargo...',
+          onPick: (v) => { a.model = v; changed(); }, onType: (v) => { a.model = v; soft(); } }));
+      });
+      const yaw = h('input', { type: 'number', min: 0, max: 359, value: a.yaw ?? '', placeholder: 'the point\'s own', style: 'max-width:120px',
+        oninput: (e) => { if (e.target.value === '') delete a.yaw; else a.yaw = +e.target.value; soft(); } });
+      row.append(box, h('div', { class: 'input-row' }, placeSelect(a, t), h('span', { class: 'muted small' }, 'facing'), yaw),
+        h('small', { class: 'muted' }, 'Stands on the floor there, solid - players, NPCs and shots stop at it. Gone when the scenario ends. Its box is square to the map, so a turned prop blocks a little more than it shows.'));
+      break;
+    }
     case 'respawn':
       row.append(selectIn(a, 'team', [
         { v: 'both', t: 'Both sides' },

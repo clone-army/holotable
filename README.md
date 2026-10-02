@@ -148,6 +148,9 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   - `respawn` (`team`: `team1`, `team2` or `both`; `where`: a point or route,
     or empty for the map's own spawns) - players on that side who spawn from
     then on are moved there
+  - `prop` (`model`: an md3 under `models/map_objects/`, `at`, optional
+    `yaw`) - a solid model on the floor there; its box comes from the model.
+    Removed when the scenario ends
   - `break` (`model`: a breakable's brush model, `*12`, and its `target`
     name if it has one) - smashes it; it stays broken till the round restarts
   - `win` (`team`: `team1`, `team2` or `draw`, optional `text`) - ends the
