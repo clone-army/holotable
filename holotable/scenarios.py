@@ -20,7 +20,7 @@ BEHAVIOURS = ("hunt", "route", "guard", "idle")
 MODES = ("fa", "semi", "open", "legends", "keep")
 SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
-         "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area")
+         "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area", "use")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
            "teleport", "use", "despawn", "win", "end", "respawn", "break", "prop",
            "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side", "arm",
@@ -394,6 +394,17 @@ def clean(data):
             "repeat": bool(t.get("repeat")), "cooldown": round(max(1, min(3600, _num(t.get("cooldown"), 5))), 1),
             "actions": acts,
         })
+        if when == "use":
+            # A player holds use at a point (within radius) or in an area.
+            u = out["triggers"][-1]
+            u["at"] = _text(t.get("at"), 39)
+            u["radius"] = int(max(16, min(1024, _num(t.get("radius"), 64))))
+            u["hold"] = round(max(0, min(120, _num(t.get("hold"), 3))), 1)
+            u["bar"] = t.get("bar") is not False
+            u["label"] = _text(t.get("label"), 60)
+            u["sound"] = _text(t.get("sound"), 127) if str(t.get("sound") or "").startswith("sound/") else ""
+            u["soundEvery"] = round(max(0.2, min(30, _num(t.get("soundEvery"), 1))), 1)
+            u["team"] = t.get("team") if t.get("team") in ("team1", "team2") else "any"
     for c in lst("counters")[:16]:
         if isinstance(c, dict) and c.get("id"):
             out["counters"].append({"id": _text(c.get("id"), 39), "name": _text(c.get("name"), 40),

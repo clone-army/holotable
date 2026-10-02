@@ -186,6 +186,11 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 - `vehicles`: `[{ "vehicle", "x", "y", "z", "yaw" }]`; `effects`:
   `[{ "effect", "x", "y", "z", "every" }]` (seconds); `sounds`:
   `[{ "sound": "sound/...", "x", "y", "z" }]` - also placed as it starts.
+- `when: "use"` - a player holds the use key at `at` (a point, within
+  `radius`, or anywhere in an area) for `hold` seconds (0 = just press it);
+  `bar` + `label` show a progress bar, `sound` plays every `soundEvery`
+  seconds while they hold it, `team` (`any`, `team1`, `team2`) says who can.
+  Letting go or moving away starts it over; whoever finishes set it off.
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `routePace` is `walk`
   (default) or `run`. `engage` is how close a player comes before a route
   walker or guard goes for them.

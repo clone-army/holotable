@@ -773,7 +773,7 @@ function validate() {
   const pointIds = ids(s.points), routeIds = ids(s.routes), areaIds = ids(s.areas), groupIds = ids(s.groups), trigIds = ids(s.triggers);
   const startsSpawned = s.groups.some((g) => g.spawnAtStart);
   if (!s.triggers.length && !startsSpawned && !['props', 'items', 'vehicles', 'effects', 'sounds'].some((k) => (s[k] || []).length)) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, add a trigger, or place props or items.', { tab: 'triggers' });
-  else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer or a player entering an area (or a group that spawns at the start).', { tab: 'triggers' });
+  else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players', 'use'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer, a player entering an area or using something (or a group that spawns at the start).', { tab: 'triggers' });
   if (s.limitClasses) {
     const c = ((LISTS[clsKey(s)] || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
     const sides = s.joinTeam && s.joinTeam !== 'any' ? [s.joinTeam] : ['team1', 'team2'];
@@ -803,6 +803,7 @@ function validate() {
   for (const t of s.triggers) {
     const nm = t.name || 'a trigger';
     if (t.when === 'enter_area' && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
+    if (t.when === 'use' && !pointIds.has(t.at) && !areaIds.has(t.at)) add('error', 'Trigger "' + nm + '": pick where it\'s used - a point or an area.', { tab: 'triggers' });
     if (t.when === 'group_dead' && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
     if (t.when === 'after' && !trigIds.has(t.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger it follows.', { tab: 'triggers' });
     if (!t.actions.length) add('warn', 'Trigger "' + nm + '" does nothing - add an action.', { tab: 'triggers' });
@@ -1607,6 +1608,7 @@ const WHENS = [
   { v: 'start', t: 'The scenario starts' },
   { v: 'timer', t: 'Some seconds after the start (or every N seconds)' },
   { v: 'enter_area', t: 'A player walks into an area', player: true },
+  { v: 'use', t: 'A player uses something (holds the use key there)', player: true },
   { v: 'all_in_area', t: 'Every player is inside an area' },
   { v: 'group_dead', t: 'A group is all down' },
   { v: 'group_left', t: 'A group is down to N or fewer' },
@@ -2058,6 +2060,25 @@ function renderTriggers(el) {
     const groupSel = () => field('Group', selectIn(t, 'group', [{ v: '', t: '- pick -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name })))));
     if (t.when === 'timer') card.append(field(t.repeat ? 'Every (seconds)' : 'Seconds after the start', numIn(t, 'seconds', { min: 0, max: 3600 })));
     if (t.when === 'enter_area' || t.when === 'all_in_area') card.append(areaSel());
+    if (t.when === 'use') {
+      if (t.hold === undefined) Object.assign(t, { hold: 3, bar: true, radius: 64, soundEvery: 1, team: 'any', label: '', sound: '' });
+      const places = [{ v: '', t: '- pick -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.areas.map((a) => ({ v: a.id, t: 'Area: ' + a.name + ' (anywhere in it)' })));
+      const atPoint = s.points.some((p) => p.id === t.at);
+      card.append(
+        h('div', { class: 'grid2' }, field('Where', selectIn(t, 'at', places)),
+          atPoint ? field('Within (units)', numIn(t, 'radius', { min: 16, max: 1024 })) : field('', h('span', {}))),
+        h('div', { class: 'grid2' }, field('Hold use for (seconds)', numIn(t, 'hold', { min: 0, max: 120, step: 0.5 }), '0 = just press it.'),
+          field('Who can', selectIn(t, 'team', [{ v: 'any', t: 'Anyone' }, { v: 'team1', t: S.teams.team1 + ' only' }, { v: 'team2', t: S.teams.team2 + ' only' }]))),
+        ...(t.hold > 0 ? [
+          h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: t.bar !== false, onchange: (e) => { t.bar = e.target.checked; changed(); } }),
+            h('span', {}, 'Show a progress bar on their screen')),
+          ...(t.bar !== false ? [field('Bar label', textIn(t, 'label', { maxlength: 60, placeholder: 'e.g. Hacking the console...' }))] : []),
+          h('div', { class: 'grid2' }, field('Sound while holding (optional)', soundPicker(t, 'sound', 'sound/... e.g. a beep or a hacking loop')),
+            field('Every (seconds)', numIn(t, 'soundEvery', { min: 0.2, max: 30, step: 0.1 }))),
+        ] : []),
+        h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' },
+          'Letting go of use, or moving away, starts it over. Whoever finishes is "the player who set it off" for the actions.'));
+    }
     if (t.when === 'group_dead') card.append(groupSel());
     if (t.when === 'group_left') card.append(h('div', { class: 'grid2' }, groupSel(), field('N or fewer left', numIn(t, 'count', { min: 0, max: 32 }))));
     if (t.when === 'players') card.append(field('Players in the game', numIn(t, 'count', { min: 1, max: 64 })));
