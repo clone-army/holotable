@@ -85,7 +85,7 @@
       {% if user.role == 'admin' %}
       <div class="tabs-row" role="tablist">
         <button class="tab-btn" type="button" role="tab" data-tab="mine">My scenarios <span class="badge">{{ mine_count }}</span></button>
-        <button class="tab-btn" type="button" role="tab" data-tab="others">Everyone else's <span class="badge">{{ other_count }}</span></button>
+        <button class="tab-btn" type="button" role="tab" data-tab="others">Everyone's <span class="badge">{{ other_count }}</span></button>
       </div>
       {% else %}
       <h2>Your scenarios <span class="badge">{{ scenarios|length }}</span></h2>
@@ -101,12 +101,12 @@
     <div class="tab-pane hidden" data-pane="others">
       {% for o, groups, count in others %}
       <div class="owner-block">
-        <div class="owner-head"><h3>{{ o }}</h3> <span class="badge">{{ count }}</span></div>
+        <div class="owner-head"><h3>{{ o }}{% if o|lower == me_name|lower %} <span class="muted small">(you)</span>{% endif %}</h3> <span class="badge">{{ count }}</span></div>
         <datalist id="folders-o{{ loop.index }}">{% for f in owner_folders[o] %}<option value="{{ f }}">{% endfor %}</datalist>
         {{ folders(groups, 'folders-o' ~ loop.index, true, 'owner:' ~ o) }}
       </div>
       {% else %}
-      <p class="muted">Nobody else has made any.</p>
+      <p class="muted">Nobody has made any yet.</p>
       {% endfor %}
     </div>
     {% endif %}

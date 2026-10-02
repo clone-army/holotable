@@ -118,15 +118,16 @@ def index():
         return [(f, sorted(folders[f], key=lambda s: s["updated"], reverse=True)) for f in order]
 
     mine = [s for s in visible if s["owner"].lower() == me["username"].lower()]
+    # Everyone's, the admin's own included - so theirs can be handed over too.
     owners = {}
     for s in visible:
-        if s["owner"].lower() != me["username"].lower():
-            owners.setdefault(s["owner"] or "(nobody)", []).append(s)
+        owners.setdefault(s["owner"] or "(nobody)", []).append(s)
     return render_template(
         "index.html", scenarios=visible, maps=gamedata.list_maps(),
         usernames=[u["username"] for u in users.listing()],
         mine=by_folder(mine), mine_count=len(mine),
         others=[(o, by_folder(owners[o]), len(owners[o])) for o in sorted(owners, key=str.lower)],
+        me_name=me["username"],
         my_folders=sorted({s["folder"] for s in mine if s["folder"]}, key=str.lower),
         owner_folders={o: sorted({s["folder"] for s in owners[o] if s["folder"]}, key=str.lower) for o in owners},
         other_count=sum(len(v) for v in owners.values()))
