@@ -141,6 +141,8 @@ function allPositions() {
   s.points.forEach((p) => out.push(p));
   s.areas.forEach((a) => out.push(a));
   s.routes.forEach((r) => r.points.forEach((p) => out.push(p)));
+  (s.props || []).forEach((p) => out.push(p));
+  (s.items || []).forEach((p) => out.push(p));
   return out;
 }
 
@@ -181,7 +183,17 @@ function drawNow() {
   drawOverlay();
 }
 
-const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d', sel: '#ffffff' };
+const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d', sel: '#ffffff', prop: '#e0a96d', item: '#5ee6ff' };
+// What the prop and item tools put down (the last one picked).
+S.propModel = 'models/map_objects/imperial/crate.md3';
+S.itemName = 'item_medpak_instant';
+// A prop's size from the props list (loaded once): [mins, maxs], or a guess.
+function propBox(model) {
+  const p = ((LISTS.props || {}).props || []).find((x) => x.model.toLowerCase() === String(model || '').toLowerCase());
+  return p ? [p.mins, p.maxs] : [[-16, -16, 0], [16, 16, 32]];
+}
+function itemKind(name) { return /^weapon_/.test(name) ? 'weapon' : /^ammo_/.test(name) ? 'ammo' : /^holdable_/.test(name) ? 'holdable' : 'item'; }
+function shortModel(m) { return String(m || '').replace(/^models\/map_objects\//i, '').replace(/\.md3$/i, ''); }
 
 // The map's own entities, by kind - drawn faintly when ticked in the
 // cut panel (the choice is remembered in this browser).
@@ -352,6 +364,26 @@ function drawOverlay() {
     ctx.globalAlpha = alphaFor(r.points[0].z);
     label(r.name, pts[0][0], pts[0][1], COL.route);
   }
+  // Props: their box, turned; items: a ringed cross.
+  for (const p of s.props || []) {
+    const [mn, mx] = propBox(p.model), yr = (p.yaw || 0) * Math.PI / 180, c = Math.cos(yr), sn = Math.sin(yr);
+    const corners = [[mn[0], mn[1]], [mx[0], mn[1]], [mx[0], mx[1]], [mn[0], mx[1]]]
+      .map(([x, y]) => w2s(p.x + x * c - y * sn, p.y + x * sn + y * c));
+    ctx.globalAlpha = alphaFor(p.z);
+    ctx.beginPath(); corners.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+    ctx.fillStyle = 'rgba(224,169,109,0.35)'; ctx.fill();
+    ctx.lineWidth = isSel('prop', p.id) ? 2.5 : 1.5; ctx.strokeStyle = isSel('prop', p.id) ? COL.sel : COL.prop; ctx.stroke();
+    const [x, y] = w2s(p.x, p.y);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(-yr) * 14, y + Math.sin(-yr) * 14); ctx.strokeStyle = COL.prop; ctx.lineWidth = 2; ctx.stroke();
+    label(p.name, x, y, COL.prop);
+  }
+  for (const it of s.items || []) {
+    const [x, y] = w2s(it.x, it.y), sel = isSel('item', it.id);
+    ctx.globalAlpha = alphaFor(it.z);
+    ctx.beginPath(); ctx.arc(x, y, sel ? 7 : 5.5, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = sel ? COL.sel : COL.item; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y); ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3); ctx.strokeStyle = COL.item; ctx.stroke();
+    label(it.name, x, y, COL.item);
+  }
   // Points
   for (const p of s.points) {
     const [x, y] = w2s(p.x, p.y);
@@ -382,6 +414,11 @@ function drawOverlay() {
 function hitTest(sx, sy) {
   const s = S.scn, d2 = (x, y) => (x - sx) ** 2 + (y - sy) ** 2;
   for (const p of s.points) { const [x, y] = w2s(p.x, p.y); if (d2(x, y) < 81) return { kind: 'point', id: p.id }; }
+  for (const it of s.items || []) { const [x, y] = w2s(it.x, it.y); if (d2(x, y) < 81) return { kind: 'item', id: it.id }; }
+  for (const p of s.props || []) {
+    const [mn, mx] = propBox(p.model), r = Math.max(9, Math.max(mx[0] - mn[0], mx[1] - mn[1]) / 2 * S.view.zoom);
+    const [x, y] = w2s(p.x, p.y); if (d2(x, y) < r * r) return { kind: 'prop', id: p.id };
+  }
   for (const r of s.routes) for (let i = 0; i < r.points.length; i++) {
     const [x, y] = w2s(r.points[i].x, r.points[i].y);
     if (d2(x, y) < 64) return { kind: 'route', id: r.id, vi: i };
@@ -406,7 +443,7 @@ function segDist(px, py, x1, y1, x2, y2) {
 }
 
 function find(kind, id) {
-  const list = { point: S.scn.points, route: S.scn.routes, area: S.scn.areas }[kind];
+  const list = { point: S.scn.points, route: S.scn.routes, area: S.scn.areas, prop: S.scn.props, item: S.scn.items }[kind];
   return list ? list.find((x) => x.id === id) : null;
 }
 
@@ -451,7 +488,7 @@ function onDown(e) {
     placeZ(p, wx, wy);
     s.points.push(p);
     S.sel = { kind: 'point', id: p.id };
-    S.drag = { type: 'yaw', id: p.id, sx, sy };
+    S.drag = { type: 'yaw', kind: 'point', id: p.id, sx, sy };
     changed();
   } else if (S.tool === 'route') {
     let rt = S.drafting && s.routes.find((q) => q.id === S.drafting);
@@ -464,6 +501,19 @@ function onDown(e) {
     placeZ(q, wx, wy);
     rt.points.push(q);
     S.sel = { kind: 'route', id: rt.id, vi: rt.points.length - 1 };
+    changed();
+  } else if (S.tool === 'prop') {
+    const p = { id: uid('o'), name: nextName(s.props, shortModel(S.propModel).split('/').pop()), model: S.propModel, yaw: 0 };
+    placeZ(p, wx, wy);
+    s.props.push(p);
+    S.sel = { kind: 'prop', id: p.id };
+    S.drag = { type: 'yaw', kind: 'prop', id: p.id, sx, sy };
+    changed();
+  } else if (S.tool === 'item') {
+    const it = { id: uid('i'), name: nextName(s.items, S.itemName.replace(/^(item|weapon|ammo|holdable)_/, '')), item: S.itemName };
+    placeZ(it, wx, wy);
+    s.items.push(it);
+    S.sel = { kind: 'item', id: it.id };
     changed();
   } else if (S.tool === 'area') {
     const a = { id: uid('a'), name: nextName(s.areas, 'Area'), radius: 32, height: 128 };
@@ -489,7 +539,7 @@ function onMove(e) {
     S.view.cx = d.cx - (sx - d.sx) / S.view.zoom;
     S.view.cy = d.cy + (sy - d.sy) / S.view.zoom;
   } else if (d.type === 'yaw') {
-    const p = find('point', d.id);
+    const p = find(d.kind || 'point', d.id);
     const [px, py] = w2s(p.x, p.y);
     if (Math.hypot(sx - px, sy - py) > 6) p.yaw = Math.round(((Math.atan2(-(sy - py), sx - px) * 180 / Math.PI) + 360) % 360);
   } else if (d.type === 'radius') {
@@ -557,7 +607,7 @@ function deleteSelection() {
     S.sel = r.points.length ? { kind: 'route', id: r.id } : null;
     if (!r.points.length) s.routes = s.routes.filter((q) => q !== r);
   } else {
-    const key = { point: 'points', route: 'routes', area: 'areas' }[sel.kind];
+    const key = { point: 'points', route: 'routes', area: 'areas', prop: 'props', item: 'items' }[sel.kind];
     s[key] = s[key].filter((x) => x.id !== sel.id);
     S.sel = null;
   }
@@ -578,6 +628,8 @@ const HINTS = {
   point: 'Click to place a point; drag while placing to set the way it faces.',
   route: 'Click to add points. Enter, double-click or Esc finishes. Routes loop back to their first point.',
   area: 'Click the middle of the area and drag out its size. A trigger can fire when a player walks in.',
+  prop: 'Click to place a prop, drag to turn it. Pick its model in the Places tab - new ones use the last picked.',
+  item: 'Click to place an item (a pickup). Pick which in the Places tab - new ones use the last picked.',
 };
 
 function updateHud() {
@@ -677,7 +729,7 @@ function validate() {
   const ids = (list) => new Set(list.map((x) => x.id));
   const pointIds = ids(s.points), routeIds = ids(s.routes), areaIds = ids(s.areas), groupIds = ids(s.groups), trigIds = ids(s.triggers);
   const startsSpawned = s.groups.some((g) => g.spawnAtStart);
-  if (!s.triggers.length && !startsSpawned) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, or add a trigger.', { tab: 'triggers' });
+  if (!s.triggers.length && !startsSpawned && !(s.props || []).length && !(s.items || []).length) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, add a trigger, or place props or items.', { tab: 'triggers' });
   else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer or a player entering an area (or a group that spawns at the start).', { tab: 'triggers' });
   if (s.limitClasses) {
     const c = ((LISTS[clsKey(s)] || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
@@ -1024,13 +1076,30 @@ function renderPlaces(el) {
     const box = h('div', { class: 'card selected' });
     const kind = S.sel.kind;
     box.append(h('div', { class: 'card-title' }, h('span', { class: 'tag ' + kind }, kind), textIn(sel, 'name', { maxlength: 40, class: 'grow' }, draw)));
-    if (kind === 'point' || kind === 'area') {
+    if (kind === 'prop') {
+      const pick = h('div', {});
+      loadList('props', '/api/props', 'props').then((list) => {
+        const size = (p) => (p.maxs[0] - p.mins[0]) + ' x ' + (p.maxs[1] - p.mins[1]) + ', ' + (p.maxs[2] - p.mins[2]) + ' tall';
+        pick.append(combo({ value: sel.model || '', items: () => list.map((p) => ({ value: p.model, sub: size(p) })), placeholder: 'Search ' + list.length + ' props',
+          onPick: (v) => { sel.model = v; S.propModel = v; changed(); } }));
+      });
+      box.append(field('Model', pick, 'Solid - players, NPCs and shots stop at it. There from the start; gone when the scenario ends. The Prop tool puts down the last one picked.'));
+    }
+    if (kind === 'item') {
+      const pick = h('div', {});
+      loadList('veh', '/api/vehicles', 'items').then((list) => {
+        pick.append(combo({ value: sel.item || '', items: () => list.map((v) => ({ value: v, sub: itemKind(v) })), placeholder: 'Search ' + list.length + ' items',
+          onPick: (v) => { sel.item = v; S.itemName = v; changed(); } }));
+      });
+      box.append(field('Item', pick, 'A pickup, as the map\'s own are - picked up, it comes back as they do. There from the start; gone when the scenario ends.'));
+    }
+    if (kind === 'point' || kind === 'area' || kind === 'prop' || kind === 'item') {
       box.append(h('div', { class: 'grid3' }, field('x', numIn(sel, 'x')), field('y', numIn(sel, 'y')), field('z', numIn(sel, 'z'))));
       const floors = surfacesAt(sel.x, sel.y);
       if (floors.length > 1) box.append(h('div', { class: 'snap' }, h('span', { class: 'muted small' }, 'Floors here: '),
         floors.slice(0, 6).map((z) => h('button', { class: 'btn tiny' + (Math.abs(z - sel.z) < 2 ? ' on' : ''), onclick: () => { sel.z = Math.round(z); changed(); } }, String(Math.round(z))))));
     }
-    if (kind === 'point') box.append(field('Facing (degrees)', numIn(sel, 'yaw', { min: 0, max: 359 })));
+    if (kind === 'point' || kind === 'prop') box.append(field('Facing (degrees)', numIn(sel, 'yaw', { min: 0, max: 359 })));
     if (kind === 'area') box.append(h('div', { class: 'grid2' }, field('Radius', numIn(sel, 'radius', { min: 16 })), field('Height', numIn(sel, 'height', { min: 32 }))));
     if (kind === 'route') {
       const tbl = h('table', { class: 'mini' }, h('tr', {}, h('th', {}, '#'), h('th', {}, 'x'), h('th', {}, 'y'), h('th', {}, 'z'), h('th', {})));
@@ -1062,6 +1131,8 @@ function renderPlaces(el) {
   listFor('Points', 'point', s.points, (p) => ' z ' + Math.round(p.z) + ', facing ' + Math.round(p.yaw));
   listFor('Routes', 'route', s.routes, (r) => ' ' + r.points.length + ' points' + (S.crossings[r.id] ? ' - through a wall!' : ''));
   listFor('Areas', 'area', s.areas, (a) => ' radius ' + Math.round(a.radius));
+  listFor('Props', 'prop', s.props || [], (p) => ' ' + shortModel(p.model));
+  listFor('Items', 'item', s.items || [], (i) => ' ' + i.item);
 }
 
 // A searchable dropdown: type to filter, arrows and Enter (or a click) to
@@ -1980,7 +2051,7 @@ function renderChecks(el) {
 // --- Load and save -----------------------------------------------------------
 
 function normalise(s) {
-  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters', 'props', 'items']) if (!Array.isArray(s[k])) s[k] = [];
   if (!s.joinTeam) s.joinTeam = 'any';
   if (!s.mode) s.mode = s.classMode === 'legends' ? 'legends' : 'fa';
   s.classMode = s.mode === 'legends' ? 'legends' : 'map';
@@ -2064,6 +2135,7 @@ async function load() {
     S.geo = prepGeometry(g);
     $('#loading').hidden = true;
     setupEntKinds();
+    loadList('props', '/api/props', 'props').then(() => draw()); // props' real sizes on the map
     api('/api/maps/' + encodeURIComponent(scn.scenario.map) + '/entities')
       .then((r) => { S.ents = r.entities || []; setupEntKinds(); draw(); })
       .catch(() => { /* just the spawns, from the geometry */ });
@@ -2117,7 +2189,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === ' ') { S.space = true; e.preventDefault(); return; }
   if (e.key === 'Enter' || e.key === 'Escape') { finishRoute(); draw(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); return; }
-  const tools = { v: 'select', p: 'point', r: 'route', a: 'area' };
+  const tools = { v: 'select', p: 'point', r: 'route', a: 'area', o: 'prop', i: 'item' };
   if (tools[e.key.toLowerCase()]) setTool(tools[e.key.toLowerCase()]);
   if (e.key.toLowerCase() === 'f') fit();
 });

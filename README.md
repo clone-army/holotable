@@ -20,6 +20,11 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
 - **Places.** Points (with a facing), routes (loops NPCs walk) and areas
   (trigger zones). Click to place; each lands on the floor under the cut, and
   you can drag to move. Route legs that go through a wall show red.
+- **Props and items.** The Prop and Item tools put things on the map that are
+  there from the start, no trigger needed: props (a model, solid - players,
+  NPCs and shots stop at it) and items (weapons, ammo, health... picked up as
+  the map's own are). Both go when the scenario ends. A prop can also be put
+  down mid-scenario by a trigger (Place a prop).
 - **Map entities.** The cut panel shows the map's own entities by kind -
   spawns (coloured by side), doors and lifts, triggers, items, NPC spawners
   and the rest (relays, location markers...). Hover one for its class and
@@ -170,6 +175,10 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   pick again. `classMode` is which list the editor shows: `map` (the map's
   team setups - Full Authentic) or `legends` (the Legends roster). Not in
   Open mode, where players build their own classes.
+- `props`: `[{ "model": "models/map_objects/...md3", "x", "y", "z", "yaw" }]`
+  (the box, `mins` / `maxs`, is filled in from the model on save);
+  `items`: `[{ "item": "weapon_blaster", "x", "y", "z" }]` - both placed as
+  the scenario starts.
 - `behaviour`: `hunt`, `route`, `guard`, `idle`. `routePace` is `walk`
   (default) or `run`. `engage` is how close a player comes before a route
   walker or guard goes for them.

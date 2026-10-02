@@ -218,6 +218,7 @@ def clean(data):
         "team1": re.sub(r"[^\w\-]", "", str(data.get("team1") or ""))[:63],
         "team2": re.sub(r"[^\w\-]", "", str(data.get("team2") or ""))[:63],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
+        "props": [], "items": [],
     }
     for p in lst("points")[:64]:
         if isinstance(p, dict):
@@ -231,6 +232,20 @@ def clean(data):
             out["areas"].append(dict(id=_text(a.get("id"), 39), name=_text(a.get("name"), 40),
                                      radius=round(max(16, min(4096, _num(a.get("radius"), 128))), 1),
                                      height=round(max(32, min(4096, _num(a.get("height"), 128))), 1), **pos(a)))
+    # Props and items there from the start (placed straight on the map).
+    from . import gamedata
+    for p in lst("props")[:64]:
+        if isinstance(p, dict):
+            model = str(p.get("model") or "")
+            b = gamedata.prop_bounds(model) if re.match(r"^models/[\w/.\-]+\.md3$", model, re.I) else None
+            if b:
+                out["props"].append(dict(id=_text(p.get("id"), 39), name=_text(p.get("name"), 40), model=model,
+                                         yaw=round(_num(p.get("yaw")) % 360, 1), mins=b[0], maxs=b[1], **pos(p)))
+    for it in lst("items")[:64]:
+        if isinstance(it, dict):
+            item = str(it.get("item") or "")
+            if re.match(r"^(item|weapon|ammo|holdable)_\w{1,40}$", item):
+                out["items"].append(dict(id=_text(it.get("id"), 39), name=_text(it.get("name"), 40), item=item, **pos(it)))
     for g in lst("groups")[:16]:
         if isinstance(g, dict):
             npcs = [_text(n, 47) for n in (g.get("npcs") or [])[:8] if str(n or "").strip()]
