@@ -17,7 +17,7 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   coordinates, any map, nothing to calibrate. A **cut height** slider lifts off
   everything above it (floors just under the cut are bright, lower ones fade),
   so stacked rooms and balconies can be worked on one at a time.
-- **Map.** Points (with a facing), routes (loops NPCs walk) and areas
+- **hEntities** (Holotable entities). Points (with a facing), routes (loops NPCs walk) and areas
   (trigger zones). Click to place; each lands on the floor under the cut, and
   you can drag to move. Route legs that go through a wall show red.
 - **Props and items.** The Prop and Item tools put things on the map that are
@@ -29,6 +29,9 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   from the start: parked vehicles ready to ride (taken away at the end unless
   someone's riding one), looping effects (fire, smoke, sparks... played every
   so often) and looping sounds (alarms, machinery, crowds).
+- **Showing and hiding.** The cut panel's Holo entities has a tick box for each kind of
+  hEntity (points, routes, areas, props, items, vehicles, effects, sounds) -
+  all shown to start with; a hidden kind isn't drawn or clickable.
 - **Map entities.** The cut panel shows the map's own entities by kind -
   spawns (coloured by side), doors and lifts, triggers, items, NPC spawners
   and the rest (relays, location markers...). Hover one for its class and

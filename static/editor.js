@@ -185,6 +185,34 @@ function drawNow() {
 }
 
 const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d', sel: '#ffffff', prop: '#e0a96d', item: '#5ee6ff', vehicle: '#b0f070', effect: '#ff7a59', sound: '#c79bff' };
+// Our own hEntities (Holotable entities), by kind - each can be hidden on
+// the map (the cut panel; remembered in this browser). Hidden ones aren't
+// drawn and can't be clicked.
+const H_KINDS = [
+  { k: 'point', t: 'Points' }, { k: 'route', t: 'Routes' }, { k: 'area', t: 'Areas' }, { k: 'prop', t: 'Props' },
+  { k: 'item', t: 'Items' }, { k: 'vehicle', t: 'Vehicles' }, { k: 'effect', t: 'Effects' }, { k: 'sound', t: 'Sounds' },
+];
+S.hShow = (() => {
+  const all = Object.fromEntries(H_KINDS.map((x) => [x.k, true]));
+  try { const v = JSON.parse(localStorage.getItem('ht-hents')); if (v && typeof v === 'object') return Object.assign(all, v); } catch (e) { /* none yet */ }
+  return all;
+})();
+const hOn = (k) => S.hShow[k] !== false;
+
+function setupHKinds() {
+  const box = $('#h-kinds');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const kind of H_KINDS) {
+    box.append(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: hOn(kind.k), onchange: (ev) => {
+      S.hShow[kind.k] = ev.target.checked;
+      try { localStorage.setItem('ht-hents', JSON.stringify(S.hShow)); } catch (e) { /* private mode */ }
+      if (!ev.target.checked && S.sel && S.sel.kind === kind.k) S.sel = null;
+      draw();
+    } }), h('i', { style: 'background:' + COL[kind.k] }), kind.t));
+  }
+}
+
 // What the prop and item tools put down (the last one picked).
 S.propModel = 'models/map_objects/imperial/crate.md3';
 S.itemName = 'item_medpak_instant';
@@ -330,7 +358,7 @@ function drawOverlay() {
   // finding your way about.
   drawEntities();
   // Areas
-  for (const a of s.areas) {
+  for (const a of hOn('area') ? s.areas : []) {
     const [x, y] = w2s(a.x, a.y);
     ctx.globalAlpha = alphaFor(a.z);
     ctx.beginPath(); ctx.arc(x, y, Math.max(3, a.radius * zoom), 0, Math.PI * 2);
@@ -341,7 +369,7 @@ function drawOverlay() {
     label(a.name, x, y, COL.area);
   }
   // Routes
-  for (const r of s.routes) {
+  for (const r of hOn('route') ? s.routes : []) {
     if (!r.points.length) continue;
     const sel = isSel('route', r.id);
     const bad = S.crossings[r.id] || [];
@@ -369,7 +397,7 @@ function drawOverlay() {
     label(r.name, pts[0][0], pts[0][1], COL.route);
   }
   // Props: their box, turned; items: a ringed cross.
-  for (const p of s.props || []) {
+  for (const p of hOn('prop') ? s.props || [] : []) {
     const [mn, mx] = propBox(p.model), yr = (p.yaw || 0) * Math.PI / 180, c = Math.cos(yr), sn = Math.sin(yr);
     const corners = [[mn[0], mn[1]], [mx[0], mn[1]], [mx[0], mx[1]], [mn[0], mx[1]]]
       .map(([x, y]) => w2s(p.x + x * c - y * sn, p.y + x * sn + y * c));
@@ -381,7 +409,7 @@ function drawOverlay() {
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(-yr) * 14, y + Math.sin(-yr) * 14); ctx.strokeStyle = COL.prop; ctx.lineWidth = 2; ctx.stroke();
     label(p.name, x, y, COL.prop);
   }
-  for (const it of s.items || []) {
+  for (const it of hOn('item') ? s.items || [] : []) {
     const [x, y] = w2s(it.x, it.y), sel = isSel('item', it.id);
     ctx.globalAlpha = alphaFor(it.z);
     ctx.beginPath(); ctx.arc(x, y, sel ? 7 : 5.5, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = sel ? COL.sel : COL.item; ctx.stroke();
@@ -389,7 +417,7 @@ function drawOverlay() {
     label(it.name, x, y, COL.item);
   }
   for (const [kind, list] of [['vehicle', s.vehicles], ['effect', s.effects], ['sound', s.sounds]]) {
-    for (const o of list || []) {
+    for (const o of hOn(kind) ? list || [] : []) {
       const [x, y] = w2s(o.x, o.y), sel = isSel(kind, o.id), r = sel ? 7 : 5.5;
       ctx.globalAlpha = alphaFor(o.z);
       ctx.beginPath();
@@ -407,7 +435,7 @@ function drawOverlay() {
     }
   }
   // Points
-  for (const p of s.points) {
+  for (const p of hOn('point') ? s.points : []) {
     const [x, y] = w2s(p.x, p.y);
     ctx.globalAlpha = alphaFor(p.z);
     const yr = -p.yaw * Math.PI / 180;
@@ -433,8 +461,12 @@ function drawOverlay() {
 
 // --- Hit testing and editing on the map ------------------------------------------
 
+// What's under the mouse - hidden kinds (cut panel) don't count.
 function hitTest(sx, sy) {
-  const s = S.scn, d2 = (x, y) => (x - sx) ** 2 + (y - sy) ** 2;
+  const s = Object.assign({}, S.scn), d2 = (x, y) => (x - sx) ** 2 + (y - sy) ** 2;
+  for (const [kind, key] of [['point', 'points'], ['route', 'routes'], ['area', 'areas'], ['prop', 'props'], ['item', 'items'], ['vehicle', 'vehicles'], ['effect', 'effects'], ['sound', 'sounds']]) {
+    if (!hOn(kind)) s[key] = [];
+  }
   for (const p of s.points) { const [x, y] = w2s(p.x, p.y); if (d2(x, y) < 81) return { kind: 'point', id: p.id }; }
   for (const it of s.items || []) { const [x, y] = w2s(it.x, it.y); if (d2(x, y) < 81) return { kind: 'item', id: it.id }; }
   for (const [kind, list] of [['vehicle', s.vehicles], ['effect', s.effects], ['sound', s.sounds]]) {
@@ -482,7 +514,7 @@ function placeZ(obj, x, y) {
   else if (obj.z === undefined) obj.z = Math.round(S.cut - 100);
   toast(above.length
     ? 'The floor there is above the cut height (at ' + Math.round(above[above.length - 1]) + ') - used that. Raise the cut to see that floor.'
-    : 'No floor found under that spot - set its height by hand (Map tab).', !above.length);
+    : 'No floor found under that spot - set its height by hand (hEntities tab).', !above.length);
 }
 
 function nextName(list, base) {
@@ -560,7 +592,7 @@ function onDown(e) {
     if (kind === 'vehicle') S.drag = { type: 'yaw', kind: 'vehicle', id: o.id, sx, sy };
     changed();
     showTab('places');
-    if (!last) toast('Pick which ' + kind + ' it is in the Map tab - new ones use the last picked.');
+    if (!last) toast('Pick which ' + kind + ' it is in the hEntities tab - new ones use the last picked.');
   } else if (S.tool === 'area') {
     const a = { id: uid('a'), name: nextName(s.areas, 'Area'), radius: 32, height: 128 };
     placeZ(a, wx, wy);
@@ -675,11 +707,11 @@ const HINTS = {
   point: 'Click to place a point; drag while placing to set the way it faces.',
   route: 'Click to add points. Enter, double-click or Esc finishes. Routes loop back to their first point.',
   area: 'Click the middle of the area and drag out its size. A trigger can fire when a player walks in.',
-  prop: 'Click to place a prop, drag to turn it. Pick its model in the Map tab - new ones use the last picked.',
-  item: 'Click to place an item (a pickup). Pick which in the Map tab - new ones use the last picked.',
-  vehicle: 'Click to park a vehicle, drag to face it. Pick which in the Map tab - new ones use the last picked.',
-  effect: 'Click to place a looping effect. Pick it, and how often it plays, in the Map tab.',
-  sound: 'Click to place a looping sound. Pick it in the Map tab.',
+  prop: 'Click to place a prop, drag to turn it. Pick its model in the hEntities tab - new ones use the last picked.',
+  item: 'Click to place an item (a pickup). Pick which in the hEntities tab - new ones use the last picked.',
+  vehicle: 'Click to park a vehicle, drag to face it. Pick which in the hEntities tab - new ones use the last picked.',
+  effect: 'Click to place a looping effect. Pick it, and how often it plays, in the hEntities tab.',
+  sound: 'Click to place a looping sound. Pick it in the hEntities tab.',
 };
 
 function updateHud() {
@@ -791,7 +823,7 @@ function validate() {
     if (!(s.classes || []).length) add('error', 'Classes are limited but none is ticked.', { tab: 'scenario' });
   }
   for (const [kind, [listKey, nameKey]] of Object.entries(PLACED)) {
-    (s[listKey] || []).forEach((o) => { if (!o[nameKey]) add('error', 'The ' + kind + ' "' + o.name + '" needs picking - which ' + kind + ' it is (Map tab).', { kind, id: o.id }); });
+    (s[listKey] || []).forEach((o) => { if (!o[nameKey]) add('error', 'The ' + kind + ' "' + o.name + '" needs picking - which ' + kind + ' it is (hEntities tab).', { kind, id: o.id }); });
   }
   const spawned = new Set();
   s.triggers.forEach((t) => t.actions.forEach((a) => { if (a.do === 'spawn') spawned.add(a.group); }));
@@ -2227,6 +2259,7 @@ async function load() {
     S.geo = prepGeometry(g);
     $('#loading').hidden = true;
     setupEntKinds();
+    setupHKinds();
     loadList('props', '/api/props', 'props').then(() => draw()); // props' real sizes on the map
     api('/api/maps/' + encodeURIComponent(scn.scenario.map) + '/entities')
       .then((r) => { S.ents = r.entities || []; setupEntKinds(); draw(); })

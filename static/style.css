@@ -126,7 +126,7 @@ input[type="range"] { padding: 0; accent-color: var(--holo); }
 .tool:hover { color: var(--text); background: #102033; }
 .tool.active { color: var(--holo); border-color: var(--holo-dim); background: rgba(70, 200, 255, 0.08); }
 .tool-sep { width: 36px; height: 1px; background: var(--line); margin: 6px 0; }
-.tool-head { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 2px 0 4px; }
+.tool-head { font-size: 10px; color: var(--muted); margin: 2px 0 4px; }
 
 .map-wrap { position: relative; min-width: 0; overflow: hidden; }
 #map { width: 100%; height: 100%; display: block; outline: none; }
