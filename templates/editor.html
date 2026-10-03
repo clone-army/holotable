@@ -15,7 +15,8 @@
 {% endblock %}
 {% block content %}
 <main class="editor">
-  <aside class="toolbar" aria-label="Tools">
+  <aside class="toolbar" aria-label="Map tools">
+    <div class="tool-head" title="Put things on the map - they're listed, and edited, in the Map tab on the right">Map</div>
     <button class="tool active" data-tool="select" title="Select / move (V)"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg><span>Select</span></button>
     <button class="tool" data-tool="point" title="Point: click to place, drag to face (P)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 12l7-7"/></svg><span>Point</span></button>
     <button class="tool" data-tool="route" title="Route: click to add points, Enter or double-click to finish (R)"><svg viewBox="0 0 24 24"><path d="M4 18l6-8 5 5 5-9"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="6" r="2"/></svg><span>Route</span></button>
@@ -46,7 +47,7 @@
   <aside class="panel">
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="scenario">Scenario</button>
-      <button class="tab" data-tab="places">Places</button>
+      <button class="tab" data-tab="places" title="Everything on the map - what the Map tools on the left put down">Map</button>
       <button class="tab" data-tab="npcs">NPCs</button>
       <button class="tab" data-tab="groups">Groups</button>
       <button class="tab" data-tab="triggers">Triggers</button>

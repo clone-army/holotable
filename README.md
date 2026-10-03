@@ -17,7 +17,7 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   coordinates, any map, nothing to calibrate. A **cut height** slider lifts off
   everything above it (floors just under the cut are bright, lower ones fade),
   so stacked rooms and balconies can be worked on one at a time.
-- **Places.** Points (with a facing), routes (loops NPCs walk) and areas
+- **Map.** Points (with a facing), routes (loops NPCs walk) and areas
   (trigger zones). Click to place; each lands on the floor under the cut, and
   you can drag to move. Route legs that go through a wall show red.
 - **Props and items.** The Prop and Item tools put things on the map that are

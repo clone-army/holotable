@@ -482,7 +482,7 @@ function placeZ(obj, x, y) {
   else if (obj.z === undefined) obj.z = Math.round(S.cut - 100);
   toast(above.length
     ? 'The floor there is above the cut height (at ' + Math.round(above[above.length - 1]) + ') - used that. Raise the cut to see that floor.'
-    : 'No floor found under that spot - set its height by hand (Places tab).', !above.length);
+    : 'No floor found under that spot - set its height by hand (Map tab).', !above.length);
 }
 
 function nextName(list, base) {
@@ -505,10 +505,11 @@ function onDown(e) {
     if (hit) {
       const obj = find(hit.kind, hit.id);
       S.drag = { type: 'move', hit, wx, wy, orig: JSON.parse(JSON.stringify(obj)), moved: false };
+      if (activeTab !== 'places') showTab('places'); else renderPanels('places');
     } else {
       S.drag = { type: 'pan', sx, sy, cx: S.view.cx, cy: S.view.cy };
+      renderPanels('places');
     }
-    renderPanels('places');
   } else if (S.tool === 'point') {
     const p = { id: uid('p'), name: nextName(s.points, 'Point'), yaw: 0 };
     placeZ(p, wx, wy);
@@ -516,6 +517,7 @@ function onDown(e) {
     S.sel = { kind: 'point', id: p.id };
     S.drag = { type: 'yaw', kind: 'point', id: p.id, sx, sy };
     changed();
+    showTab('places');
   } else if (S.tool === 'route') {
     let rt = S.drafting && s.routes.find((q) => q.id === S.drafting);
     if (!rt) {
@@ -528,6 +530,7 @@ function onDown(e) {
     rt.points.push(q);
     S.sel = { kind: 'route', id: rt.id, vi: rt.points.length - 1 };
     changed();
+    showTab('places');
   } else if (S.tool === 'prop') {
     const p = { id: uid('o'), name: nextName(s.props, shortModel(S.propModel).split('/').pop()), model: S.propModel, yaw: 0 };
     placeZ(p, wx, wy);
@@ -535,12 +538,14 @@ function onDown(e) {
     S.sel = { kind: 'prop', id: p.id };
     S.drag = { type: 'yaw', kind: 'prop', id: p.id, sx, sy };
     changed();
+    showTab('places');
   } else if (S.tool === 'item') {
     const it = { id: uid('i'), name: nextName(s.items, S.itemName.replace(/^(item|weapon|ammo|holdable)_/, '')), item: S.itemName };
     placeZ(it, wx, wy);
     s.items.push(it);
     S.sel = { kind: 'item', id: it.id };
     changed();
+    showTab('places');
   } else if (S.tool === 'vehicle' || S.tool === 'effect' || S.tool === 'sound') {
     const kind = S.tool, [listKey, nameKey] = PLACED[kind];
     // The last one picked: for effects and sounds, the newest placed that has one.
@@ -554,7 +559,8 @@ function onDown(e) {
     S.sel = { kind, id: o.id };
     if (kind === 'vehicle') S.drag = { type: 'yaw', kind: 'vehicle', id: o.id, sx, sy };
     changed();
-    if (!last) { renderPanels('places'); toast('Pick which ' + kind + ' in the Places tab - new ones use the last picked.'); }
+    showTab('places');
+    if (!last) toast('Pick which ' + kind + ' it is in the Map tab - new ones use the last picked.');
   } else if (S.tool === 'area') {
     const a = { id: uid('a'), name: nextName(s.areas, 'Area'), radius: 32, height: 128 };
     placeZ(a, wx, wy);
@@ -562,6 +568,7 @@ function onDown(e) {
     S.sel = { kind: 'area', id: a.id };
     S.drag = { type: 'radius', id: a.id };
     changed();
+    showTab('places');
   }
   draw();
 }
@@ -668,11 +675,11 @@ const HINTS = {
   point: 'Click to place a point; drag while placing to set the way it faces.',
   route: 'Click to add points. Enter, double-click or Esc finishes. Routes loop back to their first point.',
   area: 'Click the middle of the area and drag out its size. A trigger can fire when a player walks in.',
-  prop: 'Click to place a prop, drag to turn it. Pick its model in the Places tab - new ones use the last picked.',
-  item: 'Click to place an item (a pickup). Pick which in the Places tab - new ones use the last picked.',
-  vehicle: 'Click to park a vehicle, drag to face it. Pick which in the Places tab - new ones use the last picked.',
-  effect: 'Click to place a looping effect. Pick it, and how often it plays, in the Places tab.',
-  sound: 'Click to place a looping sound. Pick it in the Places tab.',
+  prop: 'Click to place a prop, drag to turn it. Pick its model in the Map tab - new ones use the last picked.',
+  item: 'Click to place an item (a pickup). Pick which in the Map tab - new ones use the last picked.',
+  vehicle: 'Click to park a vehicle, drag to face it. Pick which in the Map tab - new ones use the last picked.',
+  effect: 'Click to place a looping effect. Pick it, and how often it plays, in the Map tab.',
+  sound: 'Click to place a looping sound. Pick it in the Map tab.',
 };
 
 function updateHud() {
@@ -784,7 +791,7 @@ function validate() {
     if (!(s.classes || []).length) add('error', 'Classes are limited but none is ticked.', { tab: 'scenario' });
   }
   for (const [kind, [listKey, nameKey]] of Object.entries(PLACED)) {
-    (s[listKey] || []).forEach((o) => { if (!o[nameKey]) add('error', 'The ' + kind + ' "' + o.name + '" needs picking - which ' + kind + ' it is (Places tab).', { kind, id: o.id }); });
+    (s[listKey] || []).forEach((o) => { if (!o[nameKey]) add('error', 'The ' + kind + ' "' + o.name + '" needs picking - which ' + kind + ' it is (Map tab).', { kind, id: o.id }); });
   }
   const spawned = new Set();
   s.triggers.forEach((t) => t.actions.forEach((a) => { if (a.do === 'spawn') spawned.add(a.group); }));
