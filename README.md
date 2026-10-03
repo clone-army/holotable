@@ -174,9 +174,10 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
 - `attacks`: `all` (hostile to everyone), or `team1` / `team2` - only that
   side; the group fights for the other one, leaves its players alone, and
   fights groups on the opposite side.
-- `mode`: the MBII mode it plays in - `fa` (default), `semi`, `open`,
-  `legends`, or `keep` (the server's). If the server's in another mode,
-  `!ht play` reloads the map in this one first, then starts it.
+- `mode`: the MBII mode it plays in - `keep` (the server's own; what a new
+  scenario starts with), `fa`, `semi`, `open` or `legends`. If the server's in
+  another mode, `!ht play` reloads the map in this one first, then starts it.
+  (A file with no mode at all plays in `fa`.)
 - `limitClasses` + `classes`: when true, only those classes (MBII's class
   names, e.g. `JT_Padawan`) can be played; anyone on another is sent back to
   pick again. `classMode` is which list the editor shows: `map` (the map's

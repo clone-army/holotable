@@ -48,7 +48,7 @@ def blank(name, mapname, author):
         "description": "",
         "timeLimit": 900,
         "joinTeam": "any", "anytimeSpawn": False, "respawnSeconds": 5,
-        "mode": "fa", "limitClasses": False, "classMode": "map", "classes": [],
+        "mode": "keep", "limitClasses": False, "classMode": "map", "classes": [],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [],
         "created": int(time.time()), "createdBy": author,
         "updated": int(time.time()), "updatedBy": author,
