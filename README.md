@@ -51,7 +51,17 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   wiped out, everyone down, or some seconds after another trigger. Then: spawn
   a group, an NPC says something (a chat line under their name, with a voice
   sound - search the game's 24,000 sounds and listen in the browser), a chat or
-  centre message, a sound, music, or end it.
+  centre message, a sound, music, or end it. A trigger can have up to four
+  whens, firing once **all** of them have happened (AND) or as **any** one does
+  (OR). A group's health, or its leader's, falling to a % makes bosses; a
+  counter set to a random number picks a random outcome; a line can go to the
+  server's games log, or a web request to an API (admins only).
+- **Breakable props.** Give a prop health and shots, sabers and explosions
+  break it - with effects as it's hit, once it's badly hurt, and as it breaks,
+  and an optional blast (explosive barrels). "A prop is broken" is a trigger.
+- **Looping effects and sounds that start off**, turned on (and off) by triggers.
+- **Run every round.** Once played, the scenario starts again with each new
+  round. Winning the round leaves everything where it is until the new round.
 - **Players.** Either side as normal, or co-op: everyone on one side (the map's
   own names for them), team balance off. Anytime spawn lets players join any
   time and respawn a few seconds after dying, while the scenario runs.
@@ -122,8 +132,15 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   `group_dead` (`group`); `group_left` (`group`, `count` or fewer left);
   `all_dead`; `npc_killed` (any scenario NPC); `player_died`; `players`
   (`count` or more in the game); `after` (`trigger`, `seconds` later);
-  `counter` (`counter`, `compare` `>=` / `==` / `<=`, `count`); `countdown_end`.
+  `counter` (`counter`, `compare` `>=` / `==` / `<=`, `count`); `countdown_end`;
+  `group_health` / `leader_health` (`group`, `percent` - all of it, or its
+  leader, at or below that % of full health); `prop_destroyed` (`prop`: a
+  placed breakable prop's id, or empty for any).
   A trigger with `startOff` waits for a `trigger_on`.
+- `also`: up to 3 more whens (same keys as the trigger's own `when`), and
+  `match`: `all` (fires once every one has happened - an event counts from
+  when it happened until the trigger fires, a state only while it's true) or
+  `any` (fires as any one happens). One `use` per trigger.
 - `counters`: `[{ "id", "name", "start" }]` - numbers triggers change and test.
 - `repeat`: `false` fires once; `true` fires every time, no more often than
   `cooldown` seconds (a repeating `timer` goes off every `seconds`). Conditions
@@ -150,7 +167,8 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   - `vehicle` (`vehicle`, `at`) and `pickup` (`item` classname, `at`)
   - `move` (`group`, `behaviour`, `route` + `pace` / `at`) - new orders for a group
   - `trigger_on` / `trigger_off` (`trigger`) - turning on also re-arms it
-  - `counter` (`counter`, `op` `add` or `set`, `value`); `countdown`
+  - `counter` (`counter`, `op` `add`, `set` or `random` with `min` and `max`,
+    both included, `value`); `countdown`
     (`seconds`, `text`) - shown on everyone's screen
   - `objective` (`team`, `objective` number from the map's `.siege`) - completes
     the map's own objective; `texture` (`from`, `to` shaders) - swapped back at
@@ -161,13 +179,26 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
     or empty for the map's own spawns) - players on that side who spawn from
     then on are moved there
   - `prop` (`model`: an md3 under `models/map_objects/`, `at`, optional
-    `yaw`) - a solid model on the floor there; its box comes from the model.
-    Removed when the scenario ends
+    `yaw`, and the breakable keys below) - a solid model on the floor there;
+    its box comes from the model. Removed when the scenario ends
+  - `loop_on` / `loop_off` (`target`: a placed effect or sound's id)
+  - `log` (`text`, `{player}` filled in) - a `Holotable: <file>: <text>` line in
+    the server's games log (`g_log`)
+  - `http` (`method` `GET` or `POST`, `url`, `body`, `contentType`) - sent
+    from the game server in the background (10 s at most); `{player}`,
+    `{scenario}` and `{map}` are filled in. Only admins can add or change them
   - `break` (`model`: a breakable's brush model, `*12`, and its `target`
     name if it has one) - smashes it; it stays broken till the round restarts
   - `win` (`team`: `team1`, `team2` or `draw`, optional `text`) - ends the
-    scenario, then the round, as if that side had won it
+    round as if that side had won it; the scenario stops, but what it put out
+    stays until the new round clears the map
   - `music` (`path`), `end` (optional `text`)
+- Breakable props (placed `props`, and `prop` actions): `health` (0 = can't
+  be broken), `hitEffect`, `damagedEffect` (every second once half its health
+  is gone), `breakEffect`, `breakSound`, `blastDamage` and `blastRadius`.
+  Placed `effects` and `sounds` can have `startOff`.
+- `everyRound`: once played, it starts again with every new round, however it
+  ended, until `!ht stop` or a map change.
 - `at` is a point or area id, or `player` (where the player who set it off is).
   Effects are named as the game names them (`Grenades/EXP_BaseThermal`, no
   `effects/` or `.efx`).

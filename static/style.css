@@ -212,6 +212,9 @@ table.mini tr.on td { color: var(--holo); }
 .sub { font-size: 12px; color: var(--muted); margin: 4px 0 6px; text-transform: uppercase; letter-spacing: 0.8px; }
 .actions-list { display: flex; flex-direction: column; gap: 8px; }
 .action { display: flex; flex-direction: column; gap: 6px; border-left: 2px solid #2a1a44; padding-left: 8px; }
+.sub-box { display: flex; flex-direction: column; gap: 6px; border-left: 2px solid rgba(70, 200, 255, 0.25); padding: 4px 0 4px 8px; }
+.cond-box { display: flex; flex-direction: column; gap: 6px; border-left: 2px solid rgba(70, 200, 255, 0.4); padding: 4px 0 4px 8px; margin: 0 0 10px; }
+.cond-box > .input-row b { color: var(--holo); min-width: 34px; }
 .problem { display: flex; gap: 10px; width: 100%; text-align: left; background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; color: var(--text); cursor: pointer; }
 .problem .lvl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; padding: 2px 6px; border-radius: 4px; height: fit-content; white-space: nowrap; }
 .problem.error .lvl { background: #3a1822; color: var(--bad); }
@@ -250,6 +253,7 @@ table.mini tr.on td { color: var(--holo); }
 .combo-text { display: flex; flex-direction: column; min-width: 0; }
 .combo-text b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-text small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-plain .combo-noicon { display: none; }
 .combo-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
 
 .icon-btn { padding: 6px 10px; }

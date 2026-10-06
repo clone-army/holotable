@@ -841,18 +841,24 @@ function validate() {
   }
   for (const t of s.triggers) {
     const nm = t.name || 'a trigger';
-    if (t.when === 'enter_area' && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
-    if (t.when === 'use' && !pointIds.has(t.at) && !areaIds.has(t.at)) add('error', 'Trigger "' + nm + '": pick where it\'s used - a point or an area.', { tab: 'triggers' });
-    if (t.when === 'group_dead' && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
-    if (t.when === 'after' && !trigIds.has(t.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger it follows.', { tab: 'triggers' });
+    for (const c of condsOf(t)) {
+    if (c.when === 'enter_area' && !areaIds.has(c.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
+    if (c.when === 'use' && !pointIds.has(c.at) && !areaIds.has(c.at)) add('error', 'Trigger "' + nm + '": pick where it\'s used - a point or an area.', { tab: 'triggers' });
+    if (['group_dead', 'group_health', 'leader_health'].includes(c.when) && !groupIds.has(c.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
+    if (c.when === 'leader_health' && groupIds.has(c.group) && !(s.groups.find((g) => g.id === c.group) || {}).leader) add('warn', 'Trigger "' + nm + '": that group has no leader to watch.', { tab: 'triggers' });
+    if (c.when === 'prop_destroyed' && c.prop && !s.props.some((p) => p.id === c.prop && p.health > 0)) add('error', 'Trigger "' + nm + '": that prop isn\'t breakable (or is gone) - give it health, or pick another.', { tab: 'triggers' });
+    if (c.when === 'prop_destroyed' && !c.prop && !s.props.some((p) => p.health > 0) && !s.triggers.some((x) => x.actions.some((a) => a.do === 'prop' && a.health > 0))) add('warn', 'Trigger "' + nm + '" waits for a prop to break, but no prop can be broken.', { tab: 'triggers' });
+    if (c.when === 'after' && !trigIds.has(c.trigger)) add('error', 'Trigger "' + nm + '": pick the trigger it follows.', { tab: 'triggers' });
     if (!t.actions.length) add('warn', 'Trigger "' + nm + '" does nothing - add an action.', { tab: 'triggers' });
     if (t.actions.length > 16) add('error', 'Trigger "' + nm + '" has ' + t.actions.length + ' actions - 16 at most (only the first 16 are kept). Split it, e.g. with "Some seconds after another trigger".', { tab: 'triggers' });
-    if ((t.when === 'all_in_area') && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
-    if (t.when === 'group_in_area' && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
-    if (t.when === 'group_in_area' && !areaIds.has(t.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
-    if ((t.when === 'group_left') && !groupIds.has(t.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
-    if (t.when === 'counter' && !s.counters.some((c) => c.id === t.counter)) add('error', 'Trigger "' + nm + '": pick the counter.', { tab: 'triggers' });
-    if (t.when === 'countdown_end' && !s.triggers.some((x) => x.actions.some((a) => a.do === 'countdown'))) add('warn', 'Trigger "' + nm + '" waits for a countdown, but nothing starts one.', { tab: 'triggers' });
+    if ((c.when === 'all_in_area') && !areaIds.has(c.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
+    if (c.when === 'group_in_area' && !groupIds.has(c.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
+    if (c.when === 'group_in_area' && !areaIds.has(c.area)) add('error', 'Trigger "' + nm + '": pick the area.', { tab: 'triggers' });
+    if ((c.when === 'group_left') && !groupIds.has(c.group)) add('error', 'Trigger "' + nm + '": pick the group.', { tab: 'triggers' });
+    if (c.when === 'counter' && !s.counters.some((k) => k.id === c.counter)) add('error', 'Trigger "' + nm + '": pick the counter.', { tab: 'triggers' });
+    if (c.when === 'countdown_end' && !s.triggers.some((x) => x.actions.some((a) => a.do === 'countdown'))) add('warn', 'Trigger "' + nm + '" waits for a countdown, but nothing starts one.', { tab: 'triggers' });
+    }
+    if (condsOf(t).filter((c) => c.when === 'use').length > 1) add('error', 'Trigger "' + nm + '": only one of its whens can be "a player uses something".', { tab: 'triggers' });
     const placeIds = new Set([...pointIds, ...areaIds]);
     const hasPlayer = whenHasPlayer(t);
     t.actions.forEach((a) => {
@@ -882,6 +888,10 @@ function validate() {
       if (a.do === 'spawn' && !groupIds.has(a.group)) add('error', 'Trigger "' + nm + '": a Spawn action has no group.', { tab: 'triggers' });
       if (a.do === 'spawn' && !pointIds.has(a.at) && !routeIds.has(a.at)) add('error', 'Trigger "' + nm + '": pick where the group spawns.', { tab: 'triggers' });
       if (a.do === 'say' && !a.text && !a.path) add('warn', 'Trigger "' + nm + '": a Say action is empty.', { tab: 'triggers' });
+      if ((a.do === 'loop_on' || a.do === 'loop_off') && !s.effects.concat(s.sounds).some((x) => x.id === a.target)) add('error', 'Trigger "' + nm + '": pick the placed effect or sound to turn ' + (a.do === 'loop_on' ? 'on.' : 'off.'), { tab: 'triggers' });
+      if (a.do === 'log' && !a.text) add('error', 'Trigger "' + nm + '": a Log action has nothing to write.', { tab: 'triggers' });
+      if (a.do === 'http' && !/^https?:\/\/\S+$/.test(a.url || '')) add('error', 'Trigger "' + nm + '": a web request needs a full http:// or https:// address.', { tab: 'triggers' });
+      if (a.do === 'counter' && a.op === 'random' && (a.min ?? 1) > (a.max ?? 6)) add('warn', 'Trigger "' + nm + '": a random counter\'s lowest is above its highest (they\'ll be swapped).', { tab: 'triggers' });
     });
   }
   if (s.triggers.length && !s.triggers.some((t) => t.actions.some((a) => a.do === 'end' || a.do === 'win')))
@@ -1065,6 +1075,8 @@ function renderScenario(el) {
     h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!s.anytimeSpawn, onchange: (e) => { s.anytimeSpawn = e.target.checked; changed(); } }),
       h('span', {}, 'Anytime spawn - join any time, and respawn after dying')),
     ...(s.anytimeSpawn ? [field('Respawn after (seconds)', numIn(s, 'respawnSeconds', { min: 1, max: 60 }))] : []),
+    h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!s.everyRound, onchange: (e) => { s.everyRound = e.target.checked; changed(); } }),
+      h('span', {}, 'Run every round - once it\'s played, it starts again with each new round (till !ht stop or a new map)')),
     h('h3', {}, 'Classes'),
     ...(s.mode === 'open' || s.mode === 'keep' ? [h('small', { class: 'muted' }, s.mode === 'open'
       ? 'In Open mode players build their own classes - there\'s no class list to limit.'
@@ -1169,7 +1181,8 @@ function renderPlaces(el) {
         pick.append(combo({ value: sel.model || '', items: () => list.map((p) => ({ value: p.model, sub: size(p) })), placeholder: 'Search ' + list.length + ' props',
           onPick: (v) => { sel.model = v; S.propModel = v; changed(); } }));
       });
-      box.append(field('Model', pick, 'Solid - players, NPCs and shots stop at it. There from the start; gone when the scenario ends. The Prop tool puts down the last one picked.'));
+      box.append(field('Model', pick, 'Solid - players, NPCs and shots stop at it. There from the start; gone when the scenario ends. The Prop tool puts down the last one picked.'),
+        breakableFields(sel));
     }
     if (kind === 'item') {
       const pick = h('div', {});
@@ -1193,6 +1206,10 @@ function renderPlaces(el) {
     }
     if (kind === 'sound') {
       box.append(field('Sound', soundPicker(sel, 'sound', 'sound/... - a looping one works best'), 'Plays on a loop there for the whole scenario, heard by anyone nearby - alarms, machinery, a crowd...'));
+    }
+    if (kind === 'effect' || kind === 'sound') {
+      box.append(h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!sel.startOff, onchange: (e) => { sel.startOff = e.target.checked; changed(); } }),
+        h('span', { class: 'small' }, 'Starts off - a trigger turns it on (Turn on a placed looping effect or sound)')));
     }
     if (['point', 'area', 'prop', 'item', 'vehicle', 'effect', 'sound'].includes(kind)) {
       box.append(h('div', { class: 'grid3' }, field('x', numIn(sel, 'x')), field('y', numIn(sel, 'y')), field('z', numIn(sel, 'z'))));
@@ -1397,9 +1414,10 @@ const ACTION_SHORT = {
   give: 'give', heal: 'heal', kill: 'kill', knockdown: 'knock down', freeze: 'freeze', vehicle: 'vehicle', pickup: 'pickup',
   move: 'new orders', side: 'change side', arm: 'give weapon', trigger_on: 'trigger on', trigger_off: 'trigger off', counter: 'counter', countdown: 'countdown',
   objective: 'objective', texture: 'texture swap', gravity: 'gravity', speed: 'speed', addtime: 'round time', win: 'win round', end: 'end',
+  loop_on: 'loop on', loop_off: 'loop off', log: 'log', http: 'web request',
 };
 function triggerSummary(t) {
-  const when = (WHENS.find((w) => w.v === t.when) || {}).t || t.when;
+  const when = condsOf(t).map((c) => (WHENS.find((w) => w.v === c.when) || {}).t || c.when).join(t.match === 'any' ? ' OR ' : ' AND ');
   const acts = t.actions.map((a) => ACTION_SHORT[a.do] || a.do);
   return [when, t.actions.length + ' action' + (t.actions.length === 1 ? '' : 's') + (acts.length ? ': ' + acts.slice(0, 4).join(', ') + (acts.length > 4 ? '...' : '') : '')]
     .concat(t.repeat ? ['every time'] : [], t.startOff ? ['starts off'] : []).join(' \u00B7 ');
@@ -1659,45 +1677,52 @@ const WHENS = [
   { v: 'after', t: 'Some seconds after another trigger' },
   { v: 'counter', t: 'A counter reaches a value' },
   { v: 'countdown_end', t: 'The countdown reaches zero' },
+  { v: 'group_health', t: 'A group\'s health falls to N% or below' },
+  { v: 'leader_health', t: 'A group\'s leader falls to N% health or below (bosses)' },
+  { v: 'prop_destroyed', t: 'A breakable prop is broken', player: true },
 ];
 const ACTION_TYPES = [
-  { v: 'spawn', t: 'Spawn a group' },
-  { v: 'despawn', t: 'Remove a group' },
-  { v: 'say', t: 'An NPC says something (everyone)' },
-  { v: 'tell', t: 'Tell the player who set it off (only them)' },
-  { v: 'message', t: 'Chat message (everyone)' },
-  { v: 'center', t: 'Big centre message (everyone)' },
-  { v: 'explode', t: 'Explosion (hurts players and NPCs)' },
-  { v: 'effect', t: 'Visual effect' },
-  { v: 'shake', t: 'Shake the screen' },
-  { v: 'sound', t: 'Play a sound' },
-  { v: 'music', t: 'Change the music' },
-  { v: 'teleport', t: 'Teleport players' },
-  { v: 'use', t: 'Use a map entity (door, lift, button...)' },
-  { v: 'break', t: 'Break something on the map (window, wall...)' },
-  { v: 'respawn', t: 'Move where a side respawns' },
-  { v: 'prop', t: 'Place a prop (crate, barrel, barrier...) - solid' },
-  { v: 'give', t: 'Give players a weapon, health, armour, ammo or item' },
-  { v: 'heal', t: 'Heal players to full' },
-  { v: 'kill', t: 'Kill players' },
-  { v: 'knockdown', t: 'Knock players down' },
-  { v: 'freeze', t: 'Freeze players (can look, not move or shoot)' },
-  { v: 'vehicle', t: 'Spawn a vehicle' },
-  { v: 'pickup', t: 'Drop a pickup (medpack, weapon, ammo...)' },
-  { v: 'move', t: 'Give a group new orders (hunt, route, guard, idle, follow)' },
-  { v: 'side', t: 'Change a group\'s side (who it attacks)' },
-  { v: 'arm', t: 'Give a group a weapon' },
-  { v: 'trigger_on', t: 'Turn a trigger on (and re-arm it)' },
-  { v: 'trigger_off', t: 'Turn a trigger off' },
-  { v: 'counter', t: 'Change a counter' },
-  { v: 'countdown', t: 'Start a countdown (on everyone\'s screen)' },
-  { v: 'objective', t: 'Complete a map objective' },
-  { v: 'texture', t: 'Swap a texture' },
-  { v: 'gravity', t: 'Change gravity' },
-  { v: 'speed', t: 'Change player speed' },
-  { v: 'addtime', t: 'Add time to the round clock' },
-  { v: 'win', t: 'Win the round for a side (ends the scenario)' },
-  { v: 'end', t: 'End the scenario' },
+  { v: 'spawn', t: 'Spawn a group', c: 'NPCs', k: 'enemies wave reinforcements' },
+  { v: 'despawn', t: 'Remove a group', c: 'NPCs', k: 'delete clear' },
+  { v: 'say', t: 'An NPC says something (everyone)', c: 'Messages', k: 'talk speak chat voice dialogue' },
+  { v: 'tell', t: 'Tell the player who set it off (only them)', c: 'Messages', k: 'whisper private' },
+  { v: 'message', t: 'Chat message (everyone)', c: 'Messages', k: 'chat text' },
+  { v: 'center', t: 'Big centre message (everyone)', c: 'Messages', k: 'screen title text' },
+  { v: 'explode', t: 'Explosion (hurts players and NPCs)', c: 'World', k: 'bomb grenade blast damage' },
+  { v: 'effect', t: 'Visual effect', c: 'World', k: 'fx particles fire smoke sparks' },
+  { v: 'shake', t: 'Shake the screen', c: 'World', k: 'earthquake camera' },
+  { v: 'sound', t: 'Play a sound', c: 'Sound', k: 'audio noise' },
+  { v: 'music', t: 'Change the music', c: 'Sound', k: 'song track audio' },
+  { v: 'teleport', t: 'Teleport players', c: 'Players', k: 'move warp' },
+  { v: 'use', t: 'Use a map entity (door, lift, button...)', c: 'Map', k: 'door lift button open activate' },
+  { v: 'break', t: 'Break something on the map (window, wall...)', c: 'Map', k: 'destroy smash glass' },
+  { v: 'respawn', t: 'Move where a side respawns', c: 'Players', k: 'spawn point side' },
+  { v: 'prop', t: 'Place a prop (crate, barrel, barrier...) - solid', c: 'World', k: 'model object crate barrel barrier' },
+  { v: 'give', t: 'Give players a weapon, health, armour, ammo or item', c: 'Players', k: 'weapon health armour ammo item' },
+  { v: 'heal', t: 'Heal players to full', c: 'Players', k: 'health' },
+  { v: 'kill', t: 'Kill players', c: 'Players', k: 'death' },
+  { v: 'knockdown', t: 'Knock players down', c: 'Players', k: 'stun' },
+  { v: 'freeze', t: 'Freeze players (can look, not move or shoot)', c: 'Players', k: 'stop hold stun' },
+  { v: 'vehicle', t: 'Spawn a vehicle', c: 'World', k: 'swoop speeder ride' },
+  { v: 'pickup', t: 'Drop a pickup (medpack, weapon, ammo...)', c: 'World', k: 'item medpack weapon ammo drop' },
+  { v: 'move', t: 'Give a group new orders (hunt, route, guard, idle, follow)', c: 'NPCs', k: 'orders behaviour hunt route guard idle follow' },
+  { v: 'side', t: 'Change a group\'s side (who it attacks)', c: 'NPCs', k: 'team attack ally enemy' },
+  { v: 'arm', t: 'Give a group a weapon', c: 'NPCs', k: 'weapon' },
+  { v: 'trigger_on', t: 'Turn a trigger on (and re-arm it)', c: 'Logic', k: 'enable arm' },
+  { v: 'trigger_off', t: 'Turn a trigger off', c: 'Logic', k: 'disable' },
+  { v: 'counter', t: 'Change a counter (add, set, or a random number)', c: 'Logic', k: 'variable number add set random dice chance' },
+  { v: 'countdown', t: 'Start a countdown (on everyone\'s screen)', c: 'Logic', k: 'timer clock' },
+  { v: 'objective', t: 'Complete a map objective', c: 'Round', k: 'siege complete' },
+  { v: 'texture', t: 'Swap a texture', c: 'Map', k: 'shader remap swap' },
+  { v: 'gravity', t: 'Change gravity', c: 'World', k: 'physics jump' },
+  { v: 'speed', t: 'Change player speed', c: 'Players', k: 'run slow fast' },
+  { v: 'addtime', t: 'Add time to the round clock', c: 'Round', k: 'clock time limit' },
+  { v: 'loop_on', t: 'Turn on a placed looping effect or sound', c: 'World', k: 'start alarm fire smoke loop enable' },
+  { v: 'loop_off', t: 'Turn off a placed looping effect or sound', c: 'World', k: 'stop alarm fire smoke loop disable' },
+  { v: 'log', t: 'Write a line to the server\'s games log', c: 'Logic', k: 'log file record games.log' },
+  { v: 'http', t: 'Send a web request (GET / POST to an API)', c: 'Logic', k: 'http api webhook url post get discord' },
+  { v: 'win', t: 'Win the round for a side (ends the round)', c: 'Round', k: 'victory end' },
+  { v: 'end', t: 'End the scenario', c: 'Round', k: 'finish stop' },
 ];
 
 // Whom a player action is for.
@@ -1731,7 +1756,9 @@ const GIVE_EXTRAS = [
   { value: 'item_shield', sub: 'portable shield' }, { value: 'item_medpac', sub: 'medpac' }, { value: 'item_stimpack', sub: 'stimpack' },
   { value: 'item_cloak', sub: 'cloak' }, { value: 'item_eweb_holdable', sub: 'E-Web' },
 ];
-const whenHasPlayer = (t) => !!(WHENS.find((w) => w.v === t.when) || {}).player;
+// A trigger's whens: its own, and any more it has ("also").
+const condsOf = (t) => [t].concat(t.also || []);
+const whenHasPlayer = (t) => condsOf(t).some((c) => !!(WHENS.find((w) => w.v === c.when) || {}).player);
 
 // Where an action happens: a point, an area's middle, or the player who set
 // it off (only offered on triggers that have one).
@@ -1810,9 +1837,10 @@ function actionRow(t, a, i) {
   const s = S.scn;
   const row = h('div', { class: 'action' });
   // A new kind: its own fields, with sensible defaults - one undo step.
-  const kind = h('select', { onchange: (e) => {
+  const pickKind = (v) => {
+    if (v === a.do) return;
     for (const k of Object.keys(a)) delete a[k];
-    a.do = e.target.value;
+    a.do = v;
     if (a.do === 'explode') Object.assign(a, { damage: 60, radius: 250, effect: 'Grenades/EXP_BaseThermal', path: 'sound/weapons/thermal/explode.mp3', at: '' });
     if (a.do === 'shake') Object.assign(a, { intensity: 4, seconds: 1, at: '' });
     if (a.do === 'tell') a.style = 'center';
@@ -1826,13 +1854,23 @@ function actionRow(t, a, i) {
     if (a.do === 'side') a.attacks = 'all';
     if (a.do === 'arm') a.weapon = 'WP_BLASTER';
     if (a.do === 'respawn') Object.assign(a, { team: (S.scn.joinTeam && S.scn.joinTeam !== 'any') ? S.scn.joinTeam : 'both', where: '' });
-    if (a.do === 'counter') { a.op = 'add'; a.value = 1; a.counter = (S.scn.counters[0] || {}).id || ''; }
+    if (a.do === 'counter') { a.op = 'add'; a.value = 1; a.min = 1; a.max = 6; a.counter = (S.scn.counters[0] || {}).id || ''; }
+    if (a.do === 'loop_on' || a.do === 'loop_off') a.target = ((S.scn.effects[0] || S.scn.sounds[0]) || {}).id || '';
+    if (a.do === 'log') a.text = '';
+    if (a.do === 'http') Object.assign(a, { method: 'POST', url: '', body: '{"scenario": "{scenario}", "player": "{player}"}', contentType: 'application/json' });
     if (a.do === 'countdown') { a.seconds = 30; a.text = ''; }
     if (a.do === 'objective') { a.team = 'team1'; a.objective = 1; }
     if (a.do === 'gravity') { a.value = 200; a.seconds = 30; }
     if (a.do === 'speed') { a.value = 200; a.seconds = 30; }
     changed();
-  } }, ACTION_TYPES.map((o) => h('option', { value: o.v, selected: o.v === a.do }, o.t)));
+  };
+  // Searchable: by its name, its kind (NPCs, Players...) or a word for it.
+  const kindLabel = () => (ACTION_TYPES.find((o) => o.v === a.do) || {}).t || a.do;
+  const kind = combo({ value: kindLabel(), placeholder: 'Search actions', items: ACTION_TYPES.map((o) => ({ value: o.t, sub: o.c, search: o.v + ' ' + o.k })),
+    onPick: (label) => { const o = ACTION_TYPES.find((x) => x.t === label); if (o) pickKind(o.v); } });
+  kind.classList.add('combo-plain');
+  // Left without picking: back to what it is.
+  kind.querySelector('input').addEventListener('blur', () => setTimeout(() => { kind.querySelector('input').value = kindLabel(); }, 150));
   row.append(h('div', { class: 'input-row' }, kind,
     h('button', { class: 'btn tiny', type: 'button', title: 'Move up', disabled: i === 0, onclick: () => { t.actions.splice(i - 1, 0, t.actions.splice(i, 1)[0]); changed(); } }, '↑'),
     h('button', { class: 'btn tiny danger', type: 'button', title: 'Remove', onclick: () => { t.actions.splice(i, 1); changed(); } }, 'x')));
@@ -1984,8 +2022,11 @@ function actionRow(t, a, i) {
     case 'counter':
       row.append(h('div', { class: 'grid3' },
         field('Counter', selectIn(a, 'counter', [{ v: '', t: '- pick -' }].concat(S.scn.counters.map((c) => ({ v: c.id, t: c.name }))))),
-        field('', selectIn(a, 'op', [{ v: 'add', t: 'add' }, { v: 'set', t: 'set to' }])),
-        field('', numIn(a, 'value', { min: -9999, max: 9999 }))));
+        field('', selectIn(a, 'op', [{ v: 'add', t: 'add' }, { v: 'set', t: 'set to' }, { v: 'random', t: 'set to a random number' }])),
+        a.op === 'random' ? h('div', { class: 'input-row' }, h('span', { class: 'muted small' }, 'from'), numIn(a, 'min', { min: -9999, max: 9999 }),
+          h('span', { class: 'muted small' }, 'to'), numIn(a, 'max', { min: -9999, max: 9999 }))
+          : field('', numIn(a, 'value', { min: -9999, max: 9999 }))));
+      if (a.op === 'random') row.append(h('small', { class: 'muted' }, 'A whole number, both ends included - from 1 to 3 is 1, 2 or 3. Then a "A counter reaches a value" trigger for each (counter exactly 1, exactly 2...) picks what happens.'));
       if (!S.scn.counters.length) row.append(h('div', { class: 'warnline' }, 'Make a counter first (Counters, top of this tab).'));
       break;
     case 'countdown':
@@ -2029,9 +2070,29 @@ function actionRow(t, a, i) {
       const yaw = h('input', { type: 'number', min: 0, max: 359, value: a.yaw ?? '', placeholder: 'the point\'s own', style: 'max-width:120px',
         oninput: (e) => { if (e.target.value === '') delete a.yaw; else a.yaw = +e.target.value; soft(); } });
       row.append(box, h('div', { class: 'input-row' }, placeSelect(a, t), h('span', { class: 'muted small' }, 'facing'), yaw),
-        h('small', { class: 'muted' }, 'Stands on the floor there, solid - players, NPCs and shots stop at it. Gone when the scenario ends. Its box is square to the map, so a turned prop blocks a little more than it shows.'));
+        h('small', { class: 'muted' }, 'Stands on the floor there, solid - players, NPCs and shots stop at it. Gone when the scenario ends. Its box is square to the map, so a turned prop blocks a little more than it shows.'),
+        breakableFields(a));
       break;
     }
+    case 'loop_on': case 'loop_off': {
+      const opts = [{ v: '', t: '- pick one -' }].concat(S.scn.effects.map((e) => ({ v: e.id, t: 'Effect: ' + e.name })), S.scn.sounds.map((x) => ({ v: x.id, t: 'Sound: ' + x.name })));
+      row.append(selectIn(a, 'target', opts), h('small', { class: 'muted' }, S.scn.effects.length || S.scn.sounds.length
+        ? 'A looping effect or sound placed on the map (the Effect and Sound tools). Tick "Starts off" on it for one that a trigger turns on later.'
+        : 'Place a looping effect or sound on the map first (the Effect and Sound tools).'));
+      break;
+    }
+    case 'log':
+      row.append(textIn(a, 'text', { maxlength: 190, placeholder: 'e.g. {player} hacked the console' }),
+        h('small', { class: 'muted' }, 'Written to the server\'s games log as "Holotable: <scenario>: <text>" - for the server\'s own tools (stats, bots) to pick up. {player} is the player who set it off.'));
+      break;
+    case 'http':
+      row.append(h('div', { class: 'input-row' },
+        selectIn(a, 'method', [{ v: 'GET', t: 'GET' }, { v: 'POST', t: 'POST' }]),
+        textIn(a, 'url', { maxlength: 250, placeholder: 'https://example.com/api/hook?player={player}', class: 'grow' })));
+      if (a.method === 'POST') row.append(field('Body', h('textarea', { rows: 3, maxlength: 500, oninput: (e) => { a.body = e.target.value; soft(); } }, a.body || '')),
+        field('Content type', textIn(a, 'contentType', { maxlength: 80, placeholder: 'application/json' })));
+      row.append(h('small', { class: 'muted' }, 'Sent by the game server as it happens, without waiting for an answer (10 seconds at most). {player}, {scenario} and {map} are filled in. Only admins can add or change these.'));
+      break;
     case 'respawn':
       row.append(selectIn(a, 'team', [
         { v: 'both', t: 'Both sides' },
@@ -2074,6 +2135,24 @@ function actionRow(t, a, i) {
   return row;
 }
 
+// A prop's breakable settings: placed ones and "place a prop" alike.
+function breakableFields(o) {
+  const box = h('div', { class: 'sub-box' });
+  box.append(field('Health (0 = can\'t be broken)', numIn(o, 'health', { min: 0, max: 100000, onchange: () => changed() }),
+    o.health > 0 ? 'Shots, sabers and explosions wear it down; at 0 it breaks and is gone.' : 'Give it health to make it breakable - crates, barrels, a door to blast through.'));
+  if (o.health > 0) {
+    if (o.blastRadius === undefined) o.blastRadius = 250;
+    box.append(
+      h('div', { class: 'grid2' }, field('Hit effect', effectPicker(o, 'hitEffect'), 'Where each hit lands - sparks, chips...'),
+        field('Badly hurt effect', effectPicker(o, 'damagedEffect'), 'Every second once half its health is gone - smoke, fire...')),
+      h('div', { class: 'grid2' }, field('Break effect', effectPicker(o, 'breakEffect'), 'As it breaks - an explosion, debris...'),
+        field('Break sound', soundPicker(o, 'breakSound', 'sound/... (optional)'))),
+      h('div', { class: 'grid2' }, field('Blast damage (0 = none)', numIn(o, 'blastDamage', { min: 0, max: 1000 }), 'Hurts everyone (and other breakable props) round it as it breaks - explosive barrels.'),
+        field('Blast radius', numIn(o, 'blastRadius', { min: 16, max: 2048 }))));
+  }
+  return box;
+}
+
 function renderCounters(el) {
   const s = S.scn;
   const card = h('div', { class: 'card' }, h('div', { class: 'card-title' }, h('span', { class: 'tag' }, 'counters'),
@@ -2086,6 +2165,64 @@ function renderCounters(el) {
   el.append(card);
 }
 
+// The fields one "when" needs (c: the trigger itself, or one of its "also").
+function condFields(c, t) {
+  const s = S.scn, out = [];
+  const areaSel = () => field('Area', selectIn(c, 'area', [{ v: '', t: '- pick -' }].concat(s.areas.map((a) => ({ v: a.id, t: a.name })))));
+  const groupSel = () => field('Group', selectIn(c, 'group', [{ v: '', t: '- pick -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name })))));
+  if (c.when === 'timer') out.push(field(t.repeat ? 'Every (seconds)' : 'Seconds after the start', numIn(c, 'seconds', { min: 0, max: 3600 })));
+  if (c.when === 'enter_area' || c.when === 'all_in_area') out.push(areaSel());
+  if (c.when === 'use') {
+    if (c.hold === undefined) Object.assign(c, { hold: 3, bar: true, radius: 64, soundEvery: 1, team: 'any', label: '', sound: '' });
+    const places = [{ v: '', t: '- pick -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.areas.map((a) => ({ v: a.id, t: 'Area: ' + a.name + ' (anywhere in it)' })));
+    const atPoint = s.points.some((p) => p.id === c.at);
+    out.push(
+      h('div', { class: 'grid2' }, field('Where', selectIn(c, 'at', places)),
+        atPoint ? field('Within (units)', numIn(c, 'radius', { min: 16, max: 1024 })) : field('', h('span', {}))),
+      h('div', { class: 'grid2' }, field('Hold use for (seconds)', numIn(c, 'hold', { min: 0, max: 120, step: 0.5 }), '0 = just press it.'),
+        field('Who can', selectIn(c, 'team', [{ v: 'any', t: 'Anyone' }, { v: 'team1', t: S.teams.team1 + ' only' }, { v: 'team2', t: S.teams.team2 + ' only' }]))),
+      ...(c.hold > 0 ? [
+        h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: c.bar !== false, onchange: (e) => { c.bar = e.target.checked; changed(); } }),
+          h('span', {}, 'Show a progress bar on their screen')),
+        ...(c.bar !== false ? [field('Bar label', textIn(c, 'label', { maxlength: 60, placeholder: 'e.g. Hacking the console...' }))] : []),
+        h('div', { class: 'grid2' }, field('Sound while holding (optional)', soundPicker(c, 'sound', 'sound/... e.g. a beep or a hacking loop')),
+          field('Every (seconds)', numIn(c, 'soundEvery', { min: 0.2, max: 30, step: 0.1 }))),
+      ] : []),
+      h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' },
+        'Letting go of use, or moving away, starts it over. Whoever finishes is "the player who set it off" for the actions.'));
+  }
+  if (c.when === 'group_dead') out.push(groupSel());
+  if (c.when === 'group_left') out.push(h('div', { class: 'grid2' }, groupSel(), field('N or fewer left', numIn(c, 'count', { min: 0, max: 32 }))));
+  if (c.when === 'players') out.push(field('Players in the game', numIn(c, 'count', { min: 1, max: 64 })));
+  if (c.when === 'group_in_area') {
+    out.push(h('div', { class: 'grid3' }, groupSel(), areaSel(), field('How many of them', numIn(c, 'count', { min: 1, max: 32, placeholder: '1' }))),
+      h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' },
+        'Fires as that many of the group are inside it at once - e.g. the droids reach the reactor. With "every time", again each time they come back in.'));
+  }
+  if (c.when === 'counter') out.push(h('div', { class: 'grid3' },
+    field('Counter', selectIn(c, 'counter', [{ v: '', t: '- pick -' }].concat(s.counters.map((c) => ({ v: c.id, t: c.name }))))),
+    field('is', selectIn(c, 'compare', [{ v: '>=', t: 'at least' }, { v: '==', t: 'exactly' }, { v: '<=', t: 'at most' }])),
+    field('', numIn(c, 'count', { min: -9999, max: 9999 }))));
+  if (c.when === 'after') {
+    const others = [{ v: '', t: '- pick -' }].concat(s.triggers.filter((x) => x !== t).map((x) => ({ v: x.id, t: x.name })));
+    out.push(h('div', { class: 'grid2' },
+      field('Trigger', selectIn(c, 'trigger', others)),
+      field('Seconds later', numIn(c, 'seconds', { min: 0, max: 3600 }))));
+  }
+  if (c.when === 'group_health' || c.when === 'leader_health') {
+  if (c.percent === undefined) c.percent = 50;
+  out.push(h('div', { class: 'grid2' }, groupSel(), field(c.when === 'leader_health' ? 'Leader\'s health at or below (%)' : 'Health at or below (%)', numIn(c, 'percent', { min: 1, max: 99 }))),
+    h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' }, c.when === 'leader_health'
+      ? 'The group\'s leader (set on the group) - a boss: at 50% call in help, at 20% run for it...'
+      : 'All of the group together, out of its full health - the fallen count as nothing. Once all of it has spawned.'));
+  }
+  if (c.when === 'prop_destroyed') {
+  out.push(field('Prop', selectIn(c, 'prop', [{ v: '', t: 'Any breakable prop' }].concat(s.props.filter((p) => p.health > 0).map((p) => ({ v: p.id, t: p.name })))),
+    'Placed props with health (Prop tool). "Any" also counts ones put down by a Place a prop action. Whoever broke it is "the player who set it off".'));
+  }
+  return out;
+}
+
 function renderTriggers(el) {
   const s = S.scn;
   el.append(h('p', { class: 'muted' }, 'When something happens, do things - in order, top to bottom.'));
@@ -2095,47 +2232,26 @@ function renderTriggers(el) {
     const card = h('div', { class: 'card' },
       h('div', { class: 'card-title' }, h('span', { class: 'tag trigger' }, 'trigger'), textIn(t, 'name', { maxlength: 47, class: 'grow' })),
       field('When', selectIn(t, 'when', WHENS)));
-    const areaSel = () => field('Area', selectIn(t, 'area', [{ v: '', t: '- pick -' }].concat(s.areas.map((a) => ({ v: a.id, t: a.name })))));
-    const groupSel = () => field('Group', selectIn(t, 'group', [{ v: '', t: '- pick -' }].concat(s.groups.map((g) => ({ v: g.id, t: g.name })))));
-    if (t.when === 'timer') card.append(field(t.repeat ? 'Every (seconds)' : 'Seconds after the start', numIn(t, 'seconds', { min: 0, max: 3600 })));
-    if (t.when === 'enter_area' || t.when === 'all_in_area') card.append(areaSel());
-    if (t.when === 'use') {
-      if (t.hold === undefined) Object.assign(t, { hold: 3, bar: true, radius: 64, soundEvery: 1, team: 'any', label: '', sound: '' });
-      const places = [{ v: '', t: '- pick -' }].concat(s.points.map((p) => ({ v: p.id, t: 'Point: ' + p.name })), s.areas.map((a) => ({ v: a.id, t: 'Area: ' + a.name + ' (anywhere in it)' })));
-      const atPoint = s.points.some((p) => p.id === t.at);
-      card.append(
-        h('div', { class: 'grid2' }, field('Where', selectIn(t, 'at', places)),
-          atPoint ? field('Within (units)', numIn(t, 'radius', { min: 16, max: 1024 })) : field('', h('span', {}))),
-        h('div', { class: 'grid2' }, field('Hold use for (seconds)', numIn(t, 'hold', { min: 0, max: 120, step: 0.5 }), '0 = just press it.'),
-          field('Who can', selectIn(t, 'team', [{ v: 'any', t: 'Anyone' }, { v: 'team1', t: S.teams.team1 + ' only' }, { v: 'team2', t: S.teams.team2 + ' only' }]))),
-        ...(t.hold > 0 ? [
-          h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: t.bar !== false, onchange: (e) => { t.bar = e.target.checked; changed(); } }),
-            h('span', {}, 'Show a progress bar on their screen')),
-          ...(t.bar !== false ? [field('Bar label', textIn(t, 'label', { maxlength: 60, placeholder: 'e.g. Hacking the console...' }))] : []),
-          h('div', { class: 'grid2' }, field('Sound while holding (optional)', soundPicker(t, 'sound', 'sound/... e.g. a beep or a hacking loop')),
-            field('Every (seconds)', numIn(t, 'soundEvery', { min: 0.2, max: 30, step: 0.1 }))),
-        ] : []),
-        h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' },
-          'Letting go of use, or moving away, starts it over. Whoever finishes is "the player who set it off" for the actions.'));
-    }
-    if (t.when === 'group_dead') card.append(groupSel());
-    if (t.when === 'group_left') card.append(h('div', { class: 'grid2' }, groupSel(), field('N or fewer left', numIn(t, 'count', { min: 0, max: 32 }))));
-    if (t.when === 'players') card.append(field('Players in the game', numIn(t, 'count', { min: 1, max: 64 })));
-    if (t.when === 'group_in_area') {
-      card.append(h('div', { class: 'grid3' }, groupSel(), areaSel(), field('How many of them', numIn(t, 'count', { min: 1, max: 32, placeholder: '1' }))),
-        h('small', { class: 'muted', style: 'display:block;margin:-6px 0 10px' },
-          'Fires as that many of the group are inside it at once - e.g. the droids reach the reactor. With "every time", again each time they come back in.'));
-    }
-    if (t.when === 'counter') card.append(h('div', { class: 'grid3' },
-      field('Counter', selectIn(t, 'counter', [{ v: '', t: '- pick -' }].concat(s.counters.map((c) => ({ v: c.id, t: c.name }))))),
-      field('is', selectIn(t, 'compare', [{ v: '>=', t: 'at least' }, { v: '==', t: 'exactly' }, { v: '<=', t: 'at most' }])),
-      field('', numIn(t, 'count', { min: -9999, max: 9999 }))));
-    if (t.when === 'after') {
-      const others = [{ v: '', t: '- pick -' }].concat(s.triggers.filter((x) => x !== t).map((x) => ({ v: x.id, t: x.name })));
-      card.append(h('div', { class: 'grid2' },
-        field('Trigger', selectIn(t, 'trigger', others)),
-        field('Seconds later', numIn(t, 'seconds', { min: 0, max: 3600 }))));
-    }
+    card.append(...condFields(t, t));
+    // More whens, all of them or any one.
+    (t.also || []).forEach((c, j) => {
+      const sub = h('div', { class: 'cond-box' },
+        h('div', { class: 'input-row' }, h('b', { class: 'small' }, t.match === 'any' ? 'OR' : 'AND'),
+          selectIn(c, 'when', WHENS.filter((w) => w.v !== 'use' || c.when === 'use' || !condsOf(t).some((x) => x.when === 'use'))),
+          h('button', { class: 'btn tiny danger', type: 'button', title: 'Remove this when', onclick: () => { t.also.splice(j, 1); if (!t.also.length) delete t.also; changed(); } }, 'x')));
+      condFields(c, t).forEach((n) => sub.append(n));
+      card.append(sub);
+    });
+    card.append(h('div', { class: 'row-end' },
+      ...((t.also || []).length ? [field('Fires when', selectIn(t, 'match', [{ v: 'all', t: 'All of these have happened (AND)' }, { v: 'any', t: 'Any one of these happens (OR)' }]))] : []),
+      (t.also || []).length < 3 ? h('button', { class: 'btn small', type: 'button', onclick: () => {
+        t.also = t.also || [];
+        if (!t.match) t.match = 'all';
+        t.also.push({ when: 'counter', area: '', group: '', trigger: '', seconds: 0, count: 1, counter: (s.counters[0] || {}).id || '', compare: '>=' });
+        changed();
+      } }, t.also && t.also.length ? '+ Another when' : '+ And / or another when') : null));
+    if ((t.also || []).length && t.match !== 'any') card.append(h('small', { class: 'muted', style: 'display:block;margin:-4px 0 10px' },
+      'Something that happens at a moment (a player walking in, a timer, a death) counts from then until the trigger fires; something that stays true (a group down, a counter\'s value) only while it is.'));
     if (t.when !== 'start') {
       card.append(h('div', { class: 'grid2' },
         field('Fires', h('select', { onchange: (e) => { t.repeat = e.target.value === 'every'; changed(); } },

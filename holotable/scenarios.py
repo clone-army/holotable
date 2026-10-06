@@ -20,11 +20,13 @@ BEHAVIOURS = ("hunt", "route", "guard", "idle")
 MODES = ("fa", "semi", "open", "legends", "keep")
 SABER_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
 WHENS = ("start", "timer", "enter_area", "all_in_area", "group_dead", "group_left", "all_dead", "players",
-         "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area", "use")
+         "player_died", "npc_killed", "after", "counter", "countdown_end", "group_in_area", "use",
+         "group_health", "leader_health", "prop_destroyed")
 ACTIONS = ("spawn", "say", "tell", "message", "center", "sound", "music", "explode", "effect", "shake",
            "teleport", "use", "despawn", "win", "end", "respawn", "break", "prop",
            "give", "knockdown", "kill", "heal", "freeze", "vehicle", "pickup", "addtime", "move", "side", "arm",
-           "trigger_on", "trigger_off", "counter", "countdown", "objective", "texture", "gravity", "speed")
+           "trigger_on", "trigger_off", "counter", "countdown", "objective", "texture", "gravity", "speed",
+           "loop_on", "loop_off", "log", "http")
 WHO_FIXED = ("player", "all", "team1", "team2")
 _NPC_NAME = re.compile(r"^HT_[A-Za-z0-9_]{1,40}$")
 
@@ -185,6 +187,47 @@ def _text(v, n=200):
     return str(v or "")[:n]
 
 
+def _breakable(src):
+    """A prop's breakable settings (health 0 = can't be broken)."""
+    snd = _text(src.get("breakSound"), 95)
+    return {
+        "health": int(max(0, min(100000, _num(src.get("health"), 0)))),
+        "hitEffect": _text(src.get("hitEffect"), 63),
+        "damagedEffect": _text(src.get("damagedEffect"), 63),
+        "breakEffect": _text(src.get("breakEffect"), 63),
+        "breakSound": snd if snd.startswith("sound/") else "",
+        "blastDamage": int(max(0, min(1000, _num(src.get("blastDamage"), 0)))),
+        "blastRadius": int(max(16, min(2048, _num(src.get("blastRadius"), 250)))),
+    }
+
+
+def _cond(t, when):
+    """One of a trigger's whens - its own, or one of its "also" ones."""
+    c = {
+        "when": when,
+        "area": _text(t.get("area"), 39), "group": _text(t.get("group"), 39), "trigger": _text(t.get("trigger"), 39),
+        "seconds": round(max(0, min(3600, _num(t.get("seconds"), 0))), 1),
+        "count": int(max(-9999, min(9999, _num(t.get("count"), 0)))),
+        "counter": _text(t.get("counter"), 39),
+        "compare": t.get("compare") if t.get("compare") in (">=", "==", "<=") else ">=",
+    }
+    if when in ("group_health", "leader_health"):
+        c["percent"] = int(max(1, min(99, _num(t.get("percent"), 50))))
+    if when == "prop_destroyed":
+        c["prop"] = _text(t.get("prop"), 39)  # "" = any breakable prop
+    if when == "use":
+        # A player holds use at a point (within radius) or in an area.
+        c["at"] = _text(t.get("at"), 39)
+        c["radius"] = int(max(16, min(1024, _num(t.get("radius"), 64))))
+        c["hold"] = round(max(0, min(120, _num(t.get("hold"), 3))), 1)
+        c["bar"] = t.get("bar") is not False
+        c["label"] = _text(t.get("label"), 60)
+        c["sound"] = _text(t.get("sound"), 127) if str(t.get("sound") or "").startswith("sound/") else ""
+        c["soundEvery"] = round(max(0.2, min(30, _num(t.get("soundEvery"), 1))), 1)
+        c["team"] = t.get("team") if t.get("team") in ("team1", "team2") else "any"
+    return c
+
+
 def clean(data):
     """Keeps only what the format has, with the right types, so a bad page
     can't write anything odd into the game folder."""
@@ -208,6 +251,8 @@ def clean(data):
         "joinTeam": data.get("joinTeam") if data.get("joinTeam") in ("any", "team1", "team2") else "any",
         "anytimeSpawn": bool(data.get("anytimeSpawn")),
         "respawnSeconds": int(max(1, min(60, _num(data.get("respawnSeconds"), 5)))),
+        # Starts again with every new round, once it's been run (till it's stopped).
+        "everyRound": bool(data.get("everyRound")),
         # The classes players can pick (.mbch names), when limited.
         "limitClasses": bool(data.get("limitClasses")),
         # The MBII mode it plays in (the server reloads the map in it first).
@@ -240,7 +285,7 @@ def clean(data):
             b = gamedata.prop_bounds(model) if re.match(r"^models/[\w/.\-]+\.md3$", model, re.I) else None
             if b:
                 out["props"].append(dict(id=_text(p.get("id"), 39), name=_text(p.get("name"), 40), model=model,
-                                         yaw=round(_num(p.get("yaw")) % 360, 1), mins=b[0], maxs=b[1], **pos(p)))
+                                         yaw=round(_num(p.get("yaw")) % 360, 1), mins=b[0], maxs=b[1], **pos(p), **_breakable(p)))
     for it in lst("items")[:64]:
         if isinstance(it, dict):
             item = str(it.get("item") or "")
@@ -253,10 +298,12 @@ def clean(data):
     for e in lst("effects")[:32]:
         if isinstance(e, dict) and str(e.get("effect") or "").strip():
             out["effects"].append(dict(id=_text(e.get("id"), 39), name=_text(e.get("name"), 40), effect=_text(e.get("effect"), 95),
-                                       every=round(max(0.2, min(60, _num(e.get("every"), 1))), 1), **pos(e)))
+                                       every=round(max(0.2, min(60, _num(e.get("every"), 1))), 1),
+                                       startOff=bool(e.get("startOff")), **pos(e)))
     for so in lst("sounds")[:32]:
         if isinstance(so, dict) and str(so.get("sound") or "").startswith("sound/"):
-            out["sounds"].append(dict(id=_text(so.get("id"), 39), name=_text(so.get("name"), 40), sound=_text(so.get("sound"), 127), **pos(so)))
+            out["sounds"].append(dict(id=_text(so.get("id"), 39), name=_text(so.get("name"), 40), sound=_text(so.get("sound"), 127),
+                                      startOff=bool(so.get("startOff")), **pos(so)))
     for g in lst("groups")[:16]:
         if isinstance(g, dict):
             npcs = [_text(n, 47) for n in (g.get("npcs") or [])[:8] if str(n or "").strip()]
@@ -327,6 +374,7 @@ def clean(data):
                     act["yaw"] = int(_num(a.get("yaw"), 0)) % 360
                 if b:
                     act["mins"], act["maxs"] = b
+                act.update(_breakable(a))
             elif d == "break":
                 m = str(a.get("model") or "")
                 act["model"] = m if re.match(r"^\*\d{1,4}$", m) else ""
@@ -361,8 +409,12 @@ def clean(data):
                 act["trigger"] = _text(a.get("trigger"), 39)
             elif d == "counter":
                 act["counter"] = _text(a.get("counter"), 39)
-                act["op"] = "set" if a.get("op") == "set" else "add"
+                act["op"] = a.get("op") if a.get("op") in ("add", "set", "random") else "add"
                 act["value"] = int(max(-9999, min(9999, _num(a.get("value"), 1))))
+                if act["op"] == "random":
+                    # A whole number from min to max, both included.
+                    act["min"] = int(max(-9999, min(9999, _num(a.get("min"), 1))))
+                    act["max"] = int(max(-9999, min(9999, _num(a.get("max"), 6))))
             elif d == "countdown":
                 act["seconds"] = int(max(1, min(3600, _num(a.get("seconds"), 30))))
                 act["text"] = _text(a.get("text"), 90)
@@ -377,34 +429,41 @@ def clean(data):
                 act["value"] = (int(max(0, min(5000, _num(a.get("value"), 800)))) if d == "gravity"
                                 else int(max(10, min(400, _num(a.get("value"), 200)))))
                 act["seconds"] = int(max(0, min(3600, _num(a.get("seconds"), 0))))
+            elif d in ("loop_on", "loop_off"):
+                act["target"] = _text(a.get("target"), 39)  # a placed effect or sound
+            elif d == "log":
+                act["text"] = re.sub(r"[\r\n%]", " ", _text(a.get("text"), 190))
+            elif d == "http":
+                url = str(a.get("url") or "").strip()[:250]
+                act["url"] = url if re.match(r"^https?://[^\s]+$", url) else ""
+                act["method"] = "POST" if a.get("method") == "POST" else "GET"
+                act["body"] = _text(a.get("body"), 500)
+                ct = re.sub(r"[\r\n]", "", str(a.get("contentType") or "application/json"))[:80]
+                act["contentType"] = ct or "application/json"
             elif d == "win":
                 act["team"] = a.get("team") if a.get("team") in ("team1", "team2", "draw") else "team1"
                 act["text"] = _text(a.get("text"), 190)
             else:
                 act["text"] = _text(a.get("text"), 190)
             acts.append(act)
-        out["triggers"].append({
-            "id": _text(t.get("id"), 39), "name": _text(t.get("name"), 47), "when": when,
-            "area": _text(t.get("area"), 39), "group": _text(t.get("group"), 39), "trigger": _text(t.get("trigger"), 39),
-            "seconds": round(max(0, min(3600, _num(t.get("seconds"), 0))), 1),
-            "count": int(max(-9999, min(9999, _num(t.get("count"), 0)))),
-            "counter": _text(t.get("counter"), 39),
-            "compare": t.get("compare") if t.get("compare") in (">=", "==", "<=") else ">=",
+        trig = {"id": _text(t.get("id"), 39), "name": _text(t.get("name"), 47)}
+        trig.update(_cond(t, when))
+        # More whens: all of them, or any one ("use" once at most).
+        also = []
+        uses = when == "use"
+        for x in (t.get("also") or [])[:3]:
+            if isinstance(x, dict) and x.get("when") in WHENS and not (uses and x.get("when") == "use"):
+                uses = uses or x.get("when") == "use"
+                also.append(_cond(x, x["when"]))
+        if also:
+            trig["also"] = also
+            trig["match"] = "any" if t.get("match") == "any" else "all"
+        trig.update({
             "startOff": bool(t.get("startOff")),
             "repeat": bool(t.get("repeat")), "cooldown": round(max(1, min(3600, _num(t.get("cooldown"), 5))), 1),
             "actions": acts,
         })
-        if when == "use":
-            # A player holds use at a point (within radius) or in an area.
-            u = out["triggers"][-1]
-            u["at"] = _text(t.get("at"), 39)
-            u["radius"] = int(max(16, min(1024, _num(t.get("radius"), 64))))
-            u["hold"] = round(max(0, min(120, _num(t.get("hold"), 3))), 1)
-            u["bar"] = t.get("bar") is not False
-            u["label"] = _text(t.get("label"), 60)
-            u["sound"] = _text(t.get("sound"), 127) if str(t.get("sound") or "").startswith("sound/") else ""
-            u["soundEvery"] = round(max(0.2, min(30, _num(t.get("soundEvery"), 1))), 1)
-            u["team"] = t.get("team") if t.get("team") in ("team1", "team2") else "any"
+        out["triggers"].append(trig)
     for c in lst("counters")[:16]:
         if isinstance(c, dict) and c.get("id"):
             out["counters"].append({"id": _text(c.get("id"), 39), "name": _text(c.get("name"), 40),
@@ -539,13 +598,23 @@ def write_npc_file():
     os.replace(tmp, path)
 
 
-def save(sid, data, author):
+def _web_requests(scn):
+    """A scenario's http actions, as what they'd send."""
+    return sorted((a.get("method", ""), a.get("url", ""), a.get("body", ""), a.get("contentType", ""))
+                  for t in (scn.get("triggers") or []) for a in (t.get("actions") or []) if a.get("do") == "http")
+
+
+def save(sid, data, author, admin=False):
     cleaned = clean(data)
     with _lock:
         try:
             old = load(sid)
         except FileNotFoundError:
             old = {}
+        # Web requests come from the game server itself (inside its network),
+        # so only admins add or change them; an editor keeps any already there.
+        if not admin and _web_requests(cleaned) != _web_requests(old):
+            raise ValueError("Only admins can add or change web request (HTTP) actions.")
         cleaned["created"] = old.get("created", int(time.time()))
         cleaned["createdBy"] = old.get("createdBy", author)
         cleaned["owner"] = owner_of(old) or author

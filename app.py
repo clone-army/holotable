@@ -10,7 +10,7 @@ from flask import Flask, Response, abort, jsonify, redirect, render_template, re
 
 from holotable import config, gamedata, scenarios, users
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 app = Flask(__name__)
 app.secret_key = config.secret_key()
@@ -355,7 +355,7 @@ def api_save(sid):
     if own_scenario(sid) is None:
         return fail("No such scenario.", 404)
     try:
-        saved = scenarios.save(sid, request.get_json(silent=True), current_user()["username"])
+        saved = scenarios.save(sid, request.get_json(silent=True), current_user()["username"], current_user()["role"] == "admin")
     except ValueError as e:
         return fail(str(e))
     return ok(scenario=saved)
