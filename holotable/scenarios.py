@@ -263,7 +263,7 @@ def clean(data):
         "team1": re.sub(r"[^\w\-]", "", str(data.get("team1") or ""))[:63],
         "team2": re.sub(r"[^\w\-]", "", str(data.get("team2") or ""))[:63],
         "points": [], "routes": [], "areas": [], "groups": [], "triggers": [], "npcTypes": [], "counters": [],
-        "props": [], "items": [], "vehicles": [], "effects": [], "sounds": [],
+        "props": [], "items": [], "vehicles": [], "effects": [], "sounds": [], "spawnOverrides": [],
     }
     for p in lst("points")[:64]:
         if isinstance(p, dict):
@@ -304,6 +304,11 @@ def clean(data):
         if isinstance(so, dict) and str(so.get("sound") or "").startswith("sound/"):
             out["sounds"].append(dict(id=_text(so.get("id"), 39), name=_text(so.get("name"), 40), sound=_text(so.get("sound"), 127),
                                       startOff=bool(so.get("startOff")), **pos(so)))
+    # Where a side spawns instead of the map's spawns: one a side.
+    for z in lst("spawnOverrides")[:2]:
+        if isinstance(z, dict) and z.get("team") in ("team1", "team2") and z["team"] not in [o["team"] for o in out["spawnOverrides"]]:
+            out["spawnOverrides"].append(dict(id=_text(z.get("id"), 39), name=_text(z.get("name"), 40), team=z["team"],
+                                              radius=int(max(64, min(4096, _num(z.get("radius"), 256)))), **pos(z)))
     for g in lst("groups")[:16]:
         if isinstance(g, dict):
             npcs = [_text(n, 47) for n in (g.get("npcs") or [])[:8] if str(n or "").strip()]

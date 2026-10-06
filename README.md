@@ -60,6 +60,13 @@ Saved a change while it's running? `!ht restart` reloads it from the file and st
   break it - with effects as it's hit, once it's badly hurt, and as it breaks,
   and an optional blast (explosive barrels). "A prop is broken" is a trigger.
 - **Looping effects and sounds that start off**, turned on (and off) by triggers.
+- **Spawn overrides.** Draw a circle for a side (one each) and that side spawns
+  there instead of at the map's spawns: as the scenario starts, the server
+  finds up to 20 clear, spread-out spots on the floor inside it (room for a
+  player, out of walls, water and lava). Playing a scenario with one restarts
+  the round first, so everyone starts in the new places.
+- **Effect previews.** Every effect field has a rough in-browser preview,
+  played from the effect's own file with the game's pictures.
 - **Run every round.** Once played, the scenario starts again with each new
   round. Winning the round leaves everything where it is until the new round.
 - **Players.** Either side as normal, or co-op: everyone on one side (the map's
@@ -197,6 +204,10 @@ One JSON file per scenario in `GAMEDATA/holotable/`:
   be broken), `hitEffect`, `damagedEffect` (every second once half its health
   is gone), `breakEffect`, `breakSound`, `blastDamage` and `blastRadius`.
   Placed `effects` and `sounds` can have `startOff`.
+- `spawnOverrides`: `[{ "id", "name", "team": "team1" | "team2", "x", "y", "z",
+  "radius" }]`, one a side - that side spawns at up to 20 clear spots the
+  server finds in the circle (the count goes to the games log). A `respawn`
+  action takes over from it.
 - `everyRound`: once played, it starts again with every new round, however it
   ended, until `!ht stop` or a map change.
 - `at` is a point or area id, or `player` (where the player who set it off is).

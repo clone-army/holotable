@@ -196,6 +196,7 @@ input[type="range"] { padding: 0; accent-color: var(--holo); }
 .dot.vehicle { background: #b0f070; }
 .dot.effect { background: #ff7a59; }
 .dot.sound { background: #c79bff; }
+.dot.spawnzone { background: linear-gradient(90deg, #5fb4ff 50%, #ff6b6b 50%); }
 .snap { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 10px; }
 table.mini { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
 table.mini th, table.mini td { padding: 3px 4px; border-bottom: 1px solid var(--line); text-align: left; }

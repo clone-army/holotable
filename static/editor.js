@@ -143,7 +143,7 @@ function allPositions() {
   s.routes.forEach((r) => r.points.forEach((p) => out.push(p)));
   (s.props || []).forEach((p) => out.push(p));
   (s.items || []).forEach((p) => out.push(p));
-  ['vehicles', 'effects', 'sounds'].forEach((k) => (s[k] || []).forEach((p) => out.push(p)));
+  ['vehicles', 'effects', 'sounds', 'spawnOverrides'].forEach((k) => (s[k] || []).forEach((p) => out.push(p)));
   return out;
 }
 
@@ -191,6 +191,7 @@ const COL = { point: '#ffd166', route: '#ff8a3d', area: '#7cff9b', bad: '#ff4d6d
 const H_KINDS = [
   { k: 'point', t: 'Points' }, { k: 'route', t: 'Routes' }, { k: 'area', t: 'Areas' }, { k: 'prop', t: 'Props' },
   { k: 'item', t: 'Items' }, { k: 'vehicle', t: 'Vehicles' }, { k: 'effect', t: 'Effects' }, { k: 'sound', t: 'Sounds' },
+  { k: 'spawnzone', t: 'Spawns' },
 ];
 S.hShow = (() => {
   const all = Object.fromEntries(H_KINDS.map((x) => [x.k, true]));
@@ -357,6 +358,19 @@ function drawOverlay() {
   // The map's own entities (spawns, doors, triggers...), faintly - for
   // finding your way about.
   drawEntities();
+  // Spawn overrides: where a side spawns instead, in its own colour.
+  for (const z of hOn('spawnzone') ? s.spawnOverrides || [] : []) {
+    const [x, y] = w2s(z.x, z.y), col = SPAWN_COL[z.team] || COL.area, sel = isSel('spawnzone', z.id);
+    ctx.globalAlpha = alphaFor(z.z);
+    ctx.beginPath(); ctx.arc(x, y, Math.max(4, z.radius * zoom), 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.globalAlpha *= 0.14; ctx.fill(); ctx.globalAlpha = alphaFor(z.z);
+    ctx.lineWidth = sel ? 3 : 2; ctx.strokeStyle = sel ? COL.sel : col; ctx.stroke();
+    // A spawn marker in the middle: a little figure.
+    ctx.beginPath(); ctx.arc(x, y - 5, 3.5, 0, Math.PI * 2); ctx.moveTo(x - 6, y + 7); ctx.quadraticCurveTo(x, y - 3, x + 6, y + 7);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+    label(z.name, x, y + 10, col);
+  }
+  ctx.globalAlpha = 1;
   // Areas
   for (const a of hOn('area') ? s.areas : []) {
     const [x, y] = w2s(a.x, a.y);
@@ -464,7 +478,7 @@ function drawOverlay() {
 // What's under the mouse - hidden kinds (cut panel) don't count.
 function hitTest(sx, sy) {
   const s = Object.assign({}, S.scn), d2 = (x, y) => (x - sx) ** 2 + (y - sy) ** 2;
-  for (const [kind, key] of [['point', 'points'], ['route', 'routes'], ['area', 'areas'], ['prop', 'props'], ['item', 'items'], ['vehicle', 'vehicles'], ['effect', 'effects'], ['sound', 'sounds']]) {
+  for (const [kind, key] of [['point', 'points'], ['route', 'routes'], ['area', 'areas'], ['prop', 'props'], ['item', 'items'], ['vehicle', 'vehicles'], ['effect', 'effects'], ['sound', 'sounds'], ['spawnzone', 'spawnOverrides']]) {
     if (!hOn(kind)) s[key] = [];
   }
   for (const p of s.points) { const [x, y] = w2s(p.x, p.y); if (d2(x, y) < 81) return { kind: 'point', id: p.id }; }
@@ -489,7 +503,13 @@ function hitTest(sx, sy) {
     const [x1, y1] = w2s(r.points[i].x, r.points[i].y), [x2, y2] = w2s(r.points[i + 1].x, r.points[i + 1].y);
     if (segDist(sx, sy, x1, y1, x2, y2) < 6) return { kind: 'route', id: r.id };
   }
+  for (const z of s.spawnOverrides || []) {
+    const [x, y] = w2s(z.x, z.y);
+    if (d2(x, y) < 100) return { kind: 'spawnzone', id: z.id, part: 'centre' };
+    if (Math.abs(Math.sqrt(d2(x, y)) - z.radius * S.view.zoom) < 6) return { kind: 'spawnzone', id: z.id, part: 'edge' };
+  }
   for (const a of s.areas) { const [x, y] = w2s(a.x, a.y); if (d2(x, y) < (a.radius * S.view.zoom) ** 2) return { kind: 'area', id: a.id, part: 'inside' }; }
+  for (const z of s.spawnOverrides || []) { const [x, y] = w2s(z.x, z.y); if (d2(x, y) < (z.radius * S.view.zoom) ** 2) return { kind: 'spawnzone', id: z.id, part: 'inside' }; }
   return null;
 }
 
@@ -501,7 +521,7 @@ function segDist(px, py, x1, y1, x2, y2) {
 
 function find(kind, id) {
   const list = { point: S.scn.points, route: S.scn.routes, area: S.scn.areas, prop: S.scn.props, item: S.scn.items,
-    vehicle: S.scn.vehicles, effect: S.scn.effects, sound: S.scn.sounds }[kind];
+    vehicle: S.scn.vehicles, effect: S.scn.effects, sound: S.scn.sounds, spawnzone: S.scn.spawnOverrides }[kind];
   return list ? list.find((x) => x.id === id) : null;
 }
 
@@ -593,6 +613,18 @@ function onDown(e) {
     changed();
     showTab('places');
     if (!last) toast('Pick which ' + kind + ' it is in the Holo Entities tab - new ones use the last picked.');
+  } else if (S.tool === 'spawnzone') {
+    // One a side: the first side without one.
+    const used = (s.spawnOverrides || []).map((z) => z.team);
+    const team = ['team1', 'team2'].find((t) => !used.includes(t));
+    if (!team) { toast('Both sides have a spawn override already - drag one to move it, or delete it first.', true); return; }
+    const z = { id: uid('n'), name: S.teams[team] + ' spawn', team, radius: 32 };
+    placeZ(z, wx, wy);
+    s.spawnOverrides.push(z);
+    S.sel = { kind: 'spawnzone', id: z.id };
+    S.drag = { type: 'radius', kind: 'spawnzone', id: z.id };
+    changed();
+    showTab('places');
   } else if (S.tool === 'area') {
     const a = { id: uid('a'), name: nextName(s.areas, 'Area'), radius: 32, height: 128 };
     placeZ(a, wx, wy);
@@ -622,7 +654,7 @@ function onMove(e) {
     const [px, py] = w2s(p.x, p.y);
     if (Math.hypot(sx - px, sy - py) > 6) p.yaw = Math.round(((Math.atan2(-(sy - py), sx - px) * 180 / Math.PI) + 360) % 360);
   } else if (d.type === 'radius') {
-    const a = find('area', d.id);
+    const a = find(d.kind || 'area', d.id);
     a.radius = Math.round(Math.max(16, Math.hypot(wx - a.x, wy - a.y)));
   } else if (d.type === 'move') {
     const obj = find(d.hit.kind, d.hit.id), dx = wx - d.wx, dy = wy - d.wy;
@@ -633,7 +665,7 @@ function onMove(e) {
       obj.points[d.hit.vi].y = round1(d.orig.points[d.hit.vi].y + dy);
     } else if (d.hit.kind === 'route') {
       obj.points.forEach((p, i) => { p.x = round1(d.orig.points[i].x + dx); p.y = round1(d.orig.points[i].y + dy); });
-    } else if (d.hit.kind === 'area' && d.hit.part === 'edge') {
+    } else if ((d.hit.kind === 'area' || d.hit.kind === 'spawnzone') && d.hit.part === 'edge') {
       obj.radius = Math.round(Math.max(16, Math.hypot(wx - obj.x, wy - obj.y)));
     } else {
       obj.x = round1(d.orig.x + dx); obj.y = round1(d.orig.y + dy);
@@ -651,7 +683,7 @@ function onUp() {
     const obj = find(d.hit.kind, d.hit.id);
     if (d.hit.kind === 'route' && d.hit.vi !== undefined) placeZ(obj.points[d.hit.vi], obj.points[d.hit.vi].x, obj.points[d.hit.vi].y);
     else if (d.hit.kind === 'route') obj.points.forEach((p) => placeZ(p, p.x, p.y));
-    else if (!(d.hit.kind === 'area' && d.hit.part === 'edge')) placeZ(obj, obj.x, obj.y);
+    else if (!((d.hit.kind === 'area' || d.hit.kind === 'spawnzone') && d.hit.part === 'edge')) placeZ(obj, obj.x, obj.y);
     changed();
   } else if (d.type === 'yaw' || d.type === 'radius') {
     changed();
@@ -686,7 +718,7 @@ function deleteSelection() {
     S.sel = r.points.length ? { kind: 'route', id: r.id } : null;
     if (!r.points.length) s.routes = s.routes.filter((q) => q !== r);
   } else {
-    const key = { point: 'points', route: 'routes', area: 'areas', prop: 'props', item: 'items', vehicle: 'vehicles', effect: 'effects', sound: 'sounds' }[sel.kind];
+    const key = { point: 'points', route: 'routes', area: 'areas', prop: 'props', item: 'items', vehicle: 'vehicles', effect: 'effects', sound: 'sounds', spawnzone: 'spawnOverrides' }[sel.kind];
     s[key] = s[key].filter((x) => x.id !== sel.id);
     S.sel = null;
   }
@@ -811,7 +843,12 @@ function validate() {
   const ids = (list) => new Set(list.map((x) => x.id));
   const pointIds = ids(s.points), routeIds = ids(s.routes), areaIds = ids(s.areas), groupIds = ids(s.groups), trigIds = ids(s.triggers);
   const startsSpawned = s.groups.some((g) => g.spawnAtStart);
-  if (!s.triggers.length && !startsSpawned && !['props', 'items', 'vehicles', 'effects', 'sounds'].some((k) => (s[k] || []).length)) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, add a trigger, or place props or items.', { tab: 'triggers' });
+  for (const z of s.spawnOverrides || []) {
+    if (z.radius < 96) add('warn', 'Spawn override "' + z.name + '" is small - there may be room for only a few players. Make it at least 150 across.', { kind: 'spawnzone', id: z.id });
+    if (s.joinTeam && s.joinTeam !== 'any' && z.team !== s.joinTeam) add('info', 'Spawn override "' + z.name + '" is for ' + S.teams[z.team] + ', but only ' + S.teams[s.joinTeam] + ' can be played in this scenario.', { kind: 'spawnzone', id: z.id });
+  }
+  if ((s.spawnOverrides || []).length) add('info', 'It has a spawn override, so playing it restarts the round first - everyone spawns in the new places.', { tab: 'places' });
+  if (!s.triggers.length && !startsSpawned && !['props', 'items', 'vehicles', 'effects', 'sounds', 'spawnOverrides'].some((k) => (s[k] || []).length)) add('error', 'Nothing happens yet: tick "Spawn when the scenario starts" on a group, add a trigger, or place props or items.', { tab: 'triggers' });
   else if (s.triggers.length && !startsSpawned && !s.triggers.some((t) => ['start', 'timer', 'enter_area', 'all_in_area', 'players', 'use'].includes(t.when))) add('error', 'No trigger fires by itself - one needs When: start, a timer, a player entering an area or using something (or a group that spawns at the start).', { tab: 'triggers' });
   if (s.limitClasses) {
     const c = ((LISTS[clsKey(s)] || {}).classes || {})[s.classMode === 'legends' ? 'legends' : 'map'];
@@ -1168,12 +1205,14 @@ function stat(n, t) { return h('div', { class: 'stat' }, h('b', {}, String(n)), 
 
 function centreOn(x, y) { S.view.cx = x; S.view.cy = y; draw(); }
 
+const kindName = (kind) => (kind === 'spawnzone' ? 'spawn override' : kind);
+
 function renderPlaces(el) {
   const s = S.scn, sel = S.sel && find(S.sel.kind, S.sel.id);
   if (sel) {
     const box = h('div', { class: 'card selected' });
     const kind = S.sel.kind;
-    box.append(h('div', { class: 'card-title' }, h('span', { class: 'tag ' + kind }, kind), textIn(sel, 'name', { maxlength: 40, class: 'grow' }, draw)));
+    box.append(h('div', { class: 'card-title' }, h('span', { class: 'tag ' + kind }, kindName(kind)), textIn(sel, 'name', { maxlength: 40, class: 'grow' }, draw)));
     if (kind === 'prop') {
       const pick = h('div', {});
       loadList('props', '/api/props', 'props').then((list) => {
@@ -1211,7 +1250,17 @@ function renderPlaces(el) {
       box.append(h('label', { class: 'check-row' }, h('input', { type: 'checkbox', checked: !!sel.startOff, onchange: (e) => { sel.startOff = e.target.checked; changed(); } }),
         h('span', { class: 'small' }, 'Starts off - a trigger turns it on (Turn on a placed looping effect or sound)')));
     }
-    if (['point', 'area', 'prop', 'item', 'vehicle', 'effect', 'sound'].includes(kind)) {
+    if (kind === 'spawnzone') {
+      const taken = (s.spawnOverrides || []).filter((z) => z !== sel).map((z) => z.team);
+      box.append(field('Side', selectIn(sel, 'team', ['team1', 'team2'].filter((t) => t === sel.team || !taken.includes(t)).map((t) => ({ v: t, t: S.teams[t] }))),
+        'Everyone on this side spawns in here instead of the map\'s own spawns. One a side.'),
+        field('Radius', numIn(sel, 'radius', { min: 64, max: 4096 })),
+        h('small', { class: 'muted', style: 'display:block;margin-bottom:10px' },
+          'As the scenario starts, the server finds up to 20 clear spots on the floor inside it - room for a player, not in a wall, ' +
+          'not in water or lava, spread out - and spawns this side at them in turn. Playing the scenario restarts the round, so everyone starts there. ' +
+          'The "Move where a side respawns" action still takes over if a trigger uses it.'));
+    }
+    if (['point', 'area', 'prop', 'item', 'vehicle', 'effect', 'sound', 'spawnzone'].includes(kind)) {
       box.append(h('div', { class: 'grid3' }, field('x', numIn(sel, 'x')), field('y', numIn(sel, 'y')), field('z', numIn(sel, 'z'))));
       const floors = surfacesAt(sel.x, sel.y);
       if (floors.length > 1) box.append(h('div', { class: 'snap' }, h('span', { class: 'muted small' }, 'Floors here: '),
@@ -1229,7 +1278,7 @@ function renderPlaces(el) {
       if (S.crossings[sel.id]) box.append(h('div', { class: 'warnline' }, 'Red legs go through a wall.'));
     }
     box.append(h('div', { class: 'row-end' }, h('button', { class: 'btn small', onclick: () => { const p = kind === 'route' ? sel.points[0] : sel; if (p) centreOn(p.x, p.y); } }, 'Centre'),
-      h('button', { class: 'btn small danger', onclick: () => { S.sel = { kind, id: sel.id }; deleteSelection(); } }, 'Delete ' + kind)));
+      h('button', { class: 'btn small danger', onclick: () => { S.sel = { kind, id: sel.id }; deleteSelection(); } }, 'Delete ' + kindName(kind))));
     el.append(box);
   } else {
     el.append(h('p', { class: 'muted' }, 'Pick a tool on the left and click the map. Heights come from the floor under the cut height.'));
@@ -1254,6 +1303,7 @@ function renderPlaces(el) {
   listFor('Vehicles', 'vehicle', s.vehicles || [], (v) => ' ' + (v.vehicle || 'pick one'));
   listFor('Effects', 'effect', s.effects || [], (f) => ' ' + (f.effect || 'pick one') + ', every ' + f.every + 's');
   listFor('Sounds', 'sound', s.sounds || [], (o) => ' ' + (o.sound || 'pick one'));
+  listFor('Spawn overrides', 'spawnzone', s.spawnOverrides || [], (z) => ' ' + (S.teams[z.team] || z.team) + ', radius ' + Math.round(z.radius));
 }
 
 // A searchable dropdown: type to filter, arrows and Enter (or a click) to
@@ -2304,7 +2354,7 @@ function renderChecks(el) {
 // --- Load and save -----------------------------------------------------------
 
 function normalise(s) {
-  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters', 'props', 'items', 'vehicles', 'effects', 'sounds']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['points', 'routes', 'areas', 'groups', 'triggers', 'npcTypes', 'counters', 'props', 'items', 'vehicles', 'effects', 'sounds', 'spawnOverrides']) if (!Array.isArray(s[k])) s[k] = [];
   if (!s.joinTeam) s.joinTeam = 'any';
   if (!s.mode) s.mode = s.classMode === 'legends' ? 'legends' : 'fa';
   s.classMode = s.mode === 'legends' ? 'legends' : 'map';
@@ -2443,7 +2493,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === ' ') { S.space = true; e.preventDefault(); return; }
   if (e.key === 'Enter' || e.key === 'Escape') { finishRoute(); draw(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); return; }
-  const tools = { v: 'select', p: 'point', r: 'route', a: 'area', o: 'prop', i: 'item', h: 'vehicle', e: 'effect', u: 'sound' };
+  const tools = { v: 'select', p: 'point', r: 'route', a: 'area', o: 'prop', i: 'item', h: 'vehicle', e: 'effect', u: 'sound', n: 'spawnzone' };
   if (tools[e.key.toLowerCase()]) setTool(tools[e.key.toLowerCase()]);
   if (e.key.toLowerCase() === 'f') fit();
 });
