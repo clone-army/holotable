@@ -10,7 +10,7 @@ from flask import Flask, Response, abort, jsonify, redirect, render_template, re
 
 from holotable import config, gamedata, scenarios, users
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 app = Flask(__name__)
 app.secret_key = config.secret_key()
@@ -282,6 +282,24 @@ def api_effects():
     return ok(effects=gamedata.search_effects(request.args.get("q", "")))
 
 
+@app.route("/api/effects/file")
+@login_required
+def api_effect_file():
+    text = gamedata.effect_text(request.args.get("name", ""))
+    if text is None:
+        return fail("No such effect.", 404)
+    return ok(text=text)
+
+
+@app.route("/api/texture")
+@login_required
+def api_texture():
+    hit = gamedata.texture(request.args.get("name", ""))
+    if not hit:
+        abort(404)
+    return Response(hit[0], mimetype=hit[1], headers={"Cache-Control": "private, max-age=86400", "X-Blend": hit[2]})
+
+
 @app.route("/api/maps/<name>/targets")
 @login_required
 def api_map_targets(name):
@@ -452,6 +470,10 @@ def main():
         print("Holotable: " + warning)
     print("Holotable {} on http://{}:{} - game data {}, scenarios in {}".format(
         __version__, config.HOST, config.PORT, config.GAMEDATA, config.SCENARIO_DIR))
+    # The effects' files and pictures indexed in the background (it takes a
+    # while), so the first effect preview doesn't wait on it.
+    import threading
+    threading.Thread(target=gamedata._fx_index, daemon=True).start()
     try:
         from waitress import serve
         serve(app, host=config.HOST, port=config.PORT, threads=8)

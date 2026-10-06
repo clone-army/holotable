@@ -254,6 +254,11 @@ table.mini tr.on td { color: var(--holo); }
 .combo-text b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-text small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-plain .combo-noicon { display: none; }
+.combo-group { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--holo); border-top: 1px solid rgba(70, 200, 255, 0.12); }
+.combo-group:first-child { border-top: 0; }
+.check-row input[type="checkbox"] { flex-shrink: 0; }
+.fx-dlg { width: min(700px, 96vw); }
+.fx-canvas { display: block; width: 100%; height: auto; border-radius: 6px; margin: 8px 0; background: #06090f; }
 .combo-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
 
 .icon-btn { padding: 6px 10px; }

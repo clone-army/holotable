@@ -69,5 +69,6 @@
 {% endblock %}
 {% block scripts %}
 <script>const SCENARIO_ID = {{ sid|tojson }};</script>
+<script src="{{ url_for('static', filename='fxpreview.js') }}?v={{ version }}"></script>
 <script src="{{ url_for('static', filename='editor.js') }}?v={{ version }}"></script>
 {% endblock %}

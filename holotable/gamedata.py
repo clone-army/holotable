@@ -966,3 +966,194 @@ def map_classes(mapname, team1="", team2=""):
             _classes["legends"] = out["legends"]
             _classes["maps"][key] = out
     return out
+
+
+# --- Effect previews -----------------------------------------------------------
+#
+# What the editor needs to play an effect roughly in the browser: its .efx
+# text, and the pictures its shaders draw with. Effects and pictures come from
+# base JA's pk3s as well as MBII's (later ones win, as in the game); a shader
+# name is a picture's path without its extension, or a shader script's name -
+# then its first picture, and how it's blended (added on, or see-through).
+
+_fx = {"sig": None}
+_tex_cache = {}
+_IMG_EXT = (".tga", ".jpg", ".jpeg", ".png")
+
+
+def _all_pk3s():
+    base = []
+    try:
+        base = sorted((f for f in os.listdir(config.BASEDATA) if f.lower().endswith(".pk3")), key=str.lower)
+    except OSError:
+        pass
+    return [os.path.join(config.BASEDATA, f) for f in base] + [os.path.join(config.GAMEDATA, f) for f in _pk3s()]
+
+
+def _fx_index():
+    with _lock:
+        _refresh()
+        if _fx.get("sig") == _index["sig"]:
+            return _fx
+    efx, images, shader_files = {}, {}, []
+    for path in _all_pk3s():
+        try:
+            with zipfile.ZipFile(path) as z:
+                for member in z.namelist():
+                    low = member.lower()
+                    if low.startswith("effects/") and low.endswith(".efx"):
+                        efx[low[8:-4]] = (path, member)
+                    elif low.endswith(_IMG_EXT) and not low.startswith(("levelshots/", "models/players/")):
+                        images[low.rsplit(".", 1)[0]] = (path, member)
+                    elif low.startswith("shaders/") and low.endswith(".shader"):
+                        shader_files.append((path, member))
+        except (zipfile.BadZipFile, OSError):
+            continue
+    shaders = {}
+    for path, member in shader_files:
+        try:
+            with zipfile.ZipFile(path) as z:
+                text = z.read(member).decode("latin1")
+        except (zipfile.BadZipFile, OSError, KeyError):
+            continue
+        shaders.update(_parse_shaders(text))
+    with _lock:
+        _fx.update(sig=_index["sig"], efx=efx, images=images, shaders=shaders)
+        _tex_cache.clear()
+    return _fx
+
+
+def _parse_shaders(text):
+    """{name: (first picture, blend)} from a .shader script. blend: add,
+    alpha, multiply or opaque."""
+    text = re.sub(r"//[^\n]*", "", text)
+    out = {}
+    i, n = 0, len(text)
+    while i < n:
+        m = re.compile(r"\s*([^\s{}]+)\s*\{").match(text, i)
+        if not m:
+            j = text.find("{", i)
+            if j < 0:
+                break
+            i = j + 1
+            continue
+        name, depth, j = m.group(1).lower(), 1, m.end()
+        while j < n and depth:
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        body = text[m.end():j - 1]
+        i = j
+        image, blend = None, None
+        for stage in re.findall(r"\{([^{}]*)\}", body):
+            pic = re.search(r"^\s*(?:clamp)?map\s+(\S+)", stage, re.I | re.M) or re.search(r"^\s*animmap\s+\S+\s+(\S+)", stage, re.I | re.M)
+            if not pic or pic.group(1).startswith("$"):
+                continue
+            image = pic.group(1).lower().replace("\\", "/").rsplit(".", 1)[0]
+            bf = re.search(r"blendfunc\s+(\S+)(?:\s+(\S+))?", stage, re.I)
+            b = (bf.group(1) + " " + (bf.group(2) or "")).lower() if bf else ""
+            blend = ("add" if b.startswith("add") or "gl_one gl_one" == b.strip() or b.startswith("gl_src_alpha gl_one ") and "minus" not in b
+                     else "multiply" if b.startswith("filter") or "gl_dst_color" in b or "gl_zero gl_src_color" in b
+                     else "alpha" if b else "opaque")
+            break
+        if image:
+            out[name] = (image, blend)
+    return out
+
+
+def effect_text(name):
+    """An effect's .efx text, by the game's name for it (no effects/, no .efx)."""
+    key = str(name or "").lower().replace("\\", "/").strip("/")
+    key = key[8:] if key.startswith("effects/") else key
+    key = key[:-4] if key.endswith(".efx") else key
+    hit = _fx_index()["efx"].get(key)
+    if not hit:
+        return None
+    with zipfile.ZipFile(hit[0]) as z:
+        return z.read(hit[1]).decode("latin1")
+
+
+def texture(name):
+    """(png or jpeg bytes, mimetype, blend) of the picture a shader name
+    draws with, or None."""
+    key = str(name or "").lower().replace("\\", "/").strip("/")
+    if key.endswith(_IMG_EXT):
+        key = key.rsplit(".", 1)[0]
+    if key in _tex_cache:
+        return _tex_cache[key]
+    fx = _fx_index()
+    image, blend = key, None
+    if key in fx["shaders"]:
+        image, blend = fx["shaders"][key]
+    hit = fx["images"].get(image)
+    out = None
+    if hit:
+        with zipfile.ZipFile(hit[0]) as z:
+            data = z.read(hit[1])
+        if hit[1].lower().endswith(".tga"):
+            png = _tga_to_png(data)
+            out = (png, "image/png", blend or "add") if png else None
+        else:
+            mime = "image/png" if hit[1].lower().endswith(".png") else "image/jpeg"
+            out = (data, mime, blend or "add")
+    if len(_tex_cache) > 400:
+        _tex_cache.clear()
+    _tex_cache[key] = out
+    return out
+
+
+def _tga_to_png(data):
+    """A TGA (true colour or grey, plain or run-length) as PNG bytes."""
+    import zlib
+    if len(data) < 18:
+        return None
+    idlen, cmtype, itype = data[0], data[1], data[2]
+    w, h = struct.unpack_from("<HH", data, 12)
+    bpp, desc = data[16], data[17]
+    if cmtype or itype not in (2, 3, 10, 11) or not w or not h or w * h > 4096 * 4096:
+        return None
+    px = bpp // 8
+    if px not in (1, 3, 4):
+        return None
+    pos = 18 + idlen
+    need = w * h * px
+    if itype in (2, 3):
+        raw = data[pos:pos + need]
+    else:
+        out = bytearray()
+        while len(out) < need and pos < len(data):
+            c = data[pos]
+            pos += 1
+            count = (c & 0x7f) + 1
+            if c & 0x80:
+                out += data[pos:pos + px] * count
+                pos += px
+            else:
+                out += data[pos:pos + px * count]
+                pos += px * count
+        raw = bytes(out[:need])
+    if len(raw) < need:
+        return None
+    # To RGBA rows, top row first.
+    if px == 1:
+        rgba = bytearray(w * h * 4)
+        rgba[0::4] = raw
+        rgba[1::4] = raw
+        rgba[2::4] = raw
+        rgba[3::4] = b"\xff" * (w * h)
+    else:
+        rgba = bytearray(w * h * 4)
+        rgba[0::4] = raw[2::px]
+        rgba[1::4] = raw[1::px]
+        rgba[2::4] = raw[0::px]
+        rgba[3::4] = raw[3::px] if px == 4 else b"\xff" * (w * h)
+    stride = w * 4
+    rows = [rgba[y * stride:(y + 1) * stride] for y in range(h)]
+    if not desc & 0x20:
+        rows.reverse()  # stored bottom row first
+    body = b"".join(b"\x00" + bytes(r) for r in rows)
+
+    def chunk(tag, payload):
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", zlib.crc32(tag + payload) & 0xffffffff)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(body, 6)) + chunk(b"IEND", b""))

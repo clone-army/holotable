@@ -1281,15 +1281,20 @@ function combo({ value = '', items, placeholder = '', onPick, onType, clearOnPic
       const hay = (it.value + ' ' + (it.label || '') + ' ' + (it.sub || '') + ' ' + (it.search || '')).toLowerCase();
       return words.every((w) => hay.includes(w));
     }) : all;
-    // Names starting with what's typed first.
-    if (q) hits.sort((a, b) => (b.value.toLowerCase().startsWith(q) - a.value.toLowerCase().startsWith(q)));
+    // Names starting with what's typed first (grouped lists stay in their groups).
+    if (q && !all.some((it) => it.group)) hits.sort((a, b) => (b.value.toLowerCase().startsWith(q) - a.value.toLowerCase().startsWith(q)));
     shown = hits.slice(0, COMBO_SHOWN);
     active = shown.length ? 0 : -1;
     list.innerHTML = '';
-    shown.forEach((it, i) => list.append(h('div', { class: 'combo-item' + (i === active ? ' on' : ''), 'data-i': i,
+    let group = null;
+    shown.forEach((it, i) => {
+      // Items with a group: a heading as each group starts.
+      if (it.group && it.group !== group) list.append(h('div', { class: 'combo-group' }, (group = it.group)));
+      list.append(h('div', { class: 'combo-item' + (i === active ? ' on' : ''), 'data-i': i,
       onmousedown: (e) => { e.preventDefault(); pick(i); } },
       iconFor(it) || h('span', { class: 'combo-noicon' }),
-      h('span', { class: 'combo-text' }, h('b', {}, it.label || it.value), it.sub ? h('small', {}, it.sub) : null))));
+      h('span', { class: 'combo-text' }, h('b', {}, it.label || it.value), it.sub ? h('small', {}, it.sub) : null)));
+    });
     if (!shown.length) list.append(h('div', { class: 'combo-empty' }, q ? 'Nothing matches "' + input.value.trim() + '"' : 'Nothing to pick'));
     else if (hits.length > shown.length) list.append(h('div', { class: 'combo-empty' }, (hits.length - shown.length) + ' more - keep typing to narrow it down'));
   };
@@ -1725,6 +1730,11 @@ const ACTION_TYPES = [
   { v: 'end', t: 'End the scenario', c: 'Round', k: 'finish stop' },
 ];
 
+// The action list by kind, for the action picker: a heading for each.
+const ACTION_GROUPS = ['NPCs', 'Players', 'Messages', 'World', 'Sound', 'Map', 'Logic', 'Round'];
+const ACTION_ITEMS = ACTION_GROUPS.flatMap((grp) => ACTION_TYPES.filter((o) => o.c === grp)
+  .map((o) => ({ value: o.t, group: grp, search: grp + ' ' + o.v + ' ' + o.k })));
+
 // Whom a player action is for.
 function whoSelect(a, t) {
   const opts = [];
@@ -1785,8 +1795,10 @@ function effectPicker(obj, key) {
   const find = h('button', { type: 'button', class: 'btn tiny', onclick: () => openSearch({
     title: 'Find an effect', url: '/api/effects', key: 'effects',
     hint: 'Search the game\'s effects, e.g. "explosion", "smoke", "fire", "sparks". Effects from optional map packs only show for players who have them - the MBII ones (Grenades/, env/, explosions/...) are safest.',
+    preview: true,
     onPick: (p) => { obj[key] = p; inp.value = p; soft(); } }) }, 'Find');
-  return h('div', { class: 'input-row' }, inp, find);
+  const look = h('button', { type: 'button', class: 'btn tiny', title: 'A rough preview of it', onclick: () => openFxPreview(obj[key], obj.every) }, '▶');
+  return h('div', { class: 'input-row' }, inp, look, find);
 }
 
 function playSound(path) {
@@ -1796,7 +1808,7 @@ function playSound(path) {
   a.play().catch(() => toast('Can\'t play that one here (not found, or not a sound file).', true));
 }
 
-function openSearch({ title, url, key, hint, play, onPick }) {
+function openSearch({ title, url, key, hint, play, preview, onPick }) {
   const dlg = h('dialog', { class: 'sound-dlg' });
   const results = h('div', { class: 'sound-results' }, h('p', { class: 'muted small' }, hint || ''));
   let timer = null;
@@ -1810,6 +1822,7 @@ function openSearch({ title, url, key, hint, play, onPick }) {
         if (!r[key].length) results.append(h('p', { class: 'muted small' }, 'Nothing found.'));
         r[key].forEach((p) => results.append(h('div', { class: 'sound-row' },
           play ? h('button', { class: 'btn tiny', type: 'button', onclick: () => playSound(p) }, '▶') : null,
+          preview ? h('button', { class: 'btn tiny', type: 'button', title: 'A rough preview of it', onclick: () => openFxPreview(p) }, '▶') : null,
           h('code', { class: 'grow' }, p),
           h('button', { class: 'btn tiny primary', type: 'button', onclick: () => { onPick(p); dlg.close(); } }, 'Use'))));
       } catch (err) { toast(err.message, true); }
@@ -1866,7 +1879,7 @@ function actionRow(t, a, i) {
   };
   // Searchable: by its name, its kind (NPCs, Players...) or a word for it.
   const kindLabel = () => (ACTION_TYPES.find((o) => o.v === a.do) || {}).t || a.do;
-  const kind = combo({ value: kindLabel(), placeholder: 'Search actions', items: ACTION_TYPES.map((o) => ({ value: o.t, sub: o.c, search: o.v + ' ' + o.k })),
+  const kind = combo({ value: kindLabel(), placeholder: 'Search actions', items: ACTION_ITEMS,
     onPick: (label) => { const o = ACTION_TYPES.find((x) => x.t === label); if (o) pickKind(o.v); } });
   kind.classList.add('combo-plain');
   // Left without picking: back to what it is.
@@ -2086,9 +2099,9 @@ function actionRow(t, a, i) {
         h('small', { class: 'muted' }, 'Written to the server\'s games log as "Holotable: <scenario>: <text>" - for the server\'s own tools (stats, bots) to pick up. {player} is the player who set it off.'));
       break;
     case 'http':
-      row.append(h('div', { class: 'input-row' },
-        selectIn(a, 'method', [{ v: 'GET', t: 'GET' }, { v: 'POST', t: 'POST' }]),
-        textIn(a, 'url', { maxlength: 250, placeholder: 'https://example.com/api/hook?player={player}', class: 'grow' })));
+      row.append(h('div', { class: 'grid-say', style: 'grid-template-columns: 110px 1fr' },
+        field('Method', selectIn(a, 'method', [{ v: 'GET', t: 'GET' }, { v: 'POST', t: 'POST' }])),
+        field('URL', textIn(a, 'url', { maxlength: 250, placeholder: 'https://example.com/api/hook?player={player}' }))));
       if (a.method === 'POST') row.append(field('Body', h('textarea', { rows: 3, maxlength: 500, oninput: (e) => { a.body = e.target.value; soft(); } }, a.body || '')),
         field('Content type', textIn(a, 'contentType', { maxlength: 80, placeholder: 'application/json' })));
       row.append(h('small', { class: 'muted' }, 'Sent by the game server as it happens, without waiting for an answer (10 seconds at most). {player}, {scenario} and {map} are filled in. Only admins can add or change these.'));
